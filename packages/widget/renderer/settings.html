@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:;" />
+  <title>AI Pulse</title>
+  <link rel="stylesheet" href="settings.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">◆</span>
+      <div>
+        <div class="brand-title">AI Pulse</div>
+        <div class="brand-sub">Control &amp; settings</div>
+      </div>
+    </div>
+    <div class="status-pills">
+      <span id="service-pill" class="pill pill-muted">Service: …</span>
+      <span id="ai-pill" class="pill pill-muted">AI: …</span>
+    </div>
+  </header>
+
+  <main class="content">
+    <!-- Connections -->
+    <section class="card">
+      <div class="card-head">
+        <h2>Connections</h2>
+        <p class="muted">All API keys live here — nothing to edit by hand. You only need <strong>one</strong> AI
+          provider, but adding more makes curation more resilient: when one free tier is rate-limited, AI Pulse
+          automatically falls through to the next.</p>
+      </div>
+      <div id="keys" class="keys"></div>
+    </section>
+
+    <!-- Leaderboard -->
+    <section class="card">
+      <div class="card-head"><h2>Desktop leaderboard</h2>
+        <p class="muted">The always-on-top ranking widget docked to your screen edge.</p></div>
+      <div class="row">
+        <label class="switch"><input type="checkbox" id="lb-show" /><span>Show leaderboard</span></label>
+      </div>
+      <div class="row">
+        <span class="row-label">Dock side</span>
+        <div class="seg" id="lb-dock">
+          <button data-side="left">Left</button>
+          <button data-side="right">Right</button>
+        </div>
+      </div>
+      <div class="row">
+        <label class="switch"><input type="checkbox" id="lb-pin" /><span>Always on top of other windows</span></label>
+      </div>
+      <div class="row">
+        <span class="row-label">Rows</span>
+        <input type="range" id="lb-rows" min="5" max="40" step="1" />
+        <span id="lb-rows-val" class="row-val">25</span>
+      </div>
+    </section>
+
+    <!-- Startup -->
+    <section class="card">
+      <div class="card-head"><h2>Startup &amp; service</h2>
+        <p class="muted">AI Pulse runs quietly in your system tray. Disable start-on-login here or in Task Manager →
+          Startup at any time.</p></div>
+      <div class="row">
+        <label class="switch"><input type="checkbox" id="auto-launch" /><span>Start automatically on login</span></label>
+      </div>
+      <div class="row">
+        <label class="switch"><input type="checkbox" id="start-hidden" /><span>Start hidden in tray (no window)</span></label>
+      </div>
+      <div class="row">
+        <span class="row-label">Server port</span>
+        <input type="number" id="port" min="1" max="65535" class="num" />
+        <button id="port-save" class="btn btn-small">Apply</button>
+      </div>
+      <div class="row service-row">
+        <div id="service-detail" class="muted small">…</div>
+        <div class="btn-group">
+          <button id="svc-restart" class="btn btn-small">Restart</button>
+          <button id="svc-stop" class="btn btn-small">Stop</button>
+          <button id="svc-start" class="btn btn-small hidden">Start</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- AI provider health -->
+    <section class="card">
+      <div class="card-head"><h2>AI curation health</h2>
+        <p class="muted">Live status of each cloud provider in the rotation.</p></div>
+      <div id="providers" class="providers"><div class="muted small">Waiting for the service…</div></div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <button id="open-dashboard" class="btn btn-ghost">Open dashboard in browser</button>
+    <button id="open-logs" class="btn btn-ghost">Open logs</button>
+  </footer>
+
+  <script src="settings.js"></script>
+</body>
+</html>

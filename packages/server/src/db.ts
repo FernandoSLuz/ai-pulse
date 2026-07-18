@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
@@ -15,12 +16,20 @@ import type {
 } from "./types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dbPath = path.join(__dirname, "..", "data", "ai-pulse.db");
+
+// The desktop app runs the server from inside a read-only bundle, so the DB
+// must live in a writable per-user data dir it passes via AI_PULSE_DATA_DIR.
+// Running the server standalone falls back to packages/server/data.
+const dataDir = process.env.AI_PULSE_DATA_DIR
+  ? path.resolve(process.env.AI_PULSE_DATA_DIR)
+  : path.join(__dirname, "..", "data");
+const dbPath = path.join(dataDir, "ai-pulse.db");
 
 let db: Database.Database;
 
 export function getDb(): Database.Database {
   if (!db) {
+    fs.mkdirSync(dataDir, { recursive: true });
     db = new Database(dbPath);
     db.pragma("journal_mode = WAL");
     db.pragma("busy_timeout = 5000");
