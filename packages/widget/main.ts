@@ -161,11 +161,15 @@ function buildTrayMenu(): Menu {
   const status = supervisor.getStatus();
   const serviceLabel = status.userStopped
     ? "Service: stopped"
-    : status.healthy
-      ? "Service: running ✓"
-      : status.running
-        ? "Service: starting…"
-        : "Service: restarting…";
+    : status.failed
+      ? "Service: failed — click Start"
+      : status.healthy
+        ? status.adopted
+          ? "Service: running ✓ (adopted)"
+          : "Service: running ✓"
+        : status.running
+          ? "Service: starting…"
+          : "Service: restarting…";
 
   return Menu.buildFromTemplate([
     { label: "AI Pulse", enabled: false },

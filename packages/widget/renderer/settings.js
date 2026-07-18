@@ -134,11 +134,14 @@ function renderStartup() {
   const s = state.service;
   const detail = s.userStopped
     ? "Stopped by you."
-    : `PID ${s.pid ?? "—"} · restarts ${s.restarts} · ` +
-      (s.lastHealthyAt ? `healthy at ${new Date(s.lastHealthyAt).toLocaleTimeString()}` : "starting…");
+    : s.failed
+      ? "Failed to start after repeated attempts — click Start to retry."
+      : `PID ${s.pid ?? "—"} · restarts ${s.restarts} · ` +
+        (s.lastHealthyAt ? `healthy at ${new Date(s.lastHealthyAt).toLocaleTimeString()}` : "starting…");
   el("service-detail").textContent = detail;
-  el("svc-stop").classList.toggle("hidden", s.userStopped);
-  el("svc-start").classList.toggle("hidden", !s.userStopped);
+  const showStart = s.userStopped || s.failed;
+  el("svc-stop").classList.toggle("hidden", showStart);
+  el("svc-start").classList.toggle("hidden", !showStart);
 }
 
 function renderPills() {
@@ -147,8 +150,11 @@ function renderPills() {
   if (s.userStopped) {
     pill.textContent = "Service: stopped";
     pill.className = "pill pill-warn";
+  } else if (s.failed) {
+    pill.textContent = "Service: failed";
+    pill.className = "pill pill-err";
   } else if (s.healthy) {
-    pill.textContent = "Service: running";
+    pill.textContent = s.adopted ? "Service: running (adopted)" : "Service: running";
     pill.className = "pill pill-ok";
   } else {
     pill.textContent = s.running ? "Service: starting" : "Service: restarting";
