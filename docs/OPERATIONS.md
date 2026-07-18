@@ -86,6 +86,14 @@ http://localhost:3847
 
 The dashboard is a content view only. Its settings gear redirects back into the desktop app via the `aipulse://` deep link (with an in-browser fallback drawer if the app isn't installed).
 
+## Updating
+
+AI Pulse checks GitHub Releases for a newer version on startup and every few hours. Nothing installs on its own:
+
+- When an update is found you get a tray/notification hint, and **Settings → Updates** shows it.
+- Click **Download & install** to fetch it, then **Restart & install** to apply. You can also **Check for updates** manually there.
+- Release-candidate builds are prereleases and are not offered as automatic updates.
+
 ## If something looks wrong
 
 If the feed is stale, curation shows **degraded (rules)**, the server won't stay up, or the dashboard won't load, see **[TROUBLESHOOTING.md](./TROUBLESHOOTING.md)**.

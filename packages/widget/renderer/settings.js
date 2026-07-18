@@ -156,6 +156,29 @@ function renderPills() {
   }
 }
 
+// --- Updates ----------------------------------------------------------------
+
+function renderUpdate() {
+  const u = state.update;
+  if (!u) return;
+  el("update-version").textContent = "v" + u.currentVersion;
+  const statusText = {
+    idle: "",
+    checking: "Checking…",
+    "not-available": "You're up to date ✓",
+    available: "Update available: v" + u.availableVersion,
+    downloading: "Downloading… " + u.percent + "%",
+    downloaded: "Update v" + u.availableVersion + " ready to install",
+    error: "Update check failed" + (u.error ? ": " + u.error : ""),
+    unsupported: "Updates apply to the installed app only",
+  }[u.status] || "";
+  el("update-status").textContent = statusText;
+  el("update-check").classList.toggle("hidden", u.status === "downloaded" || u.status === "downloading");
+  el("update-check").disabled = u.status === "checking" || u.status === "unsupported";
+  el("update-download").classList.toggle("hidden", u.status !== "available");
+  el("update-install").classList.toggle("hidden", u.status !== "downloaded");
+}
+
 // --- AI provider health -----------------------------------------------------
 
 async function refreshProviders() {
@@ -338,6 +361,7 @@ function applyState() {
   renderLeaderboard();
   renderStartup();
   renderPills();
+  renderUpdate();
 }
 
 let rowsTimer = null;
@@ -388,6 +412,16 @@ function wireControls() {
   el("svc-start").addEventListener("click", () => api.serviceStart());
   el("open-dashboard").addEventListener("click", () => api.openDashboard());
   el("open-logs").addEventListener("click", () => api.openLogs());
+
+  el("update-check").addEventListener("click", async () => {
+    state.update = await api.updateCheck();
+    renderUpdate();
+  });
+  el("update-download").addEventListener("click", async () => {
+    state.update = await api.updateDownload();
+    renderUpdate();
+  });
+  el("update-install").addEventListener("click", () => api.updateInstall());
 }
 
 async function init() {
@@ -399,6 +433,7 @@ async function init() {
     state = s;
     renderPills();
     renderStartup();
+    renderUpdate();
   });
   loadPreferences();
   refreshProviders();

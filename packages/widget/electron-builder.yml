@@ -39,3 +39,9 @@ protocols:
   - name: AI Pulse
     schemes:
       - aipulse
+
+# Update feed for electron-updater (generates latest.yml / app-update.yml).
+publish:
+  provider: github
+  owner: FernandoSLuz
+  repo: ai-pulse

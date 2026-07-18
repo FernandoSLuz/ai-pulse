@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",
+    "electron-updater": "^6.3.9",
     "node-notifier": "^10.0.1"
   },
   "devDependencies": {
