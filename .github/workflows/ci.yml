@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build & typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build server (tsc)
+        run: npm run build -w @ai-pulse/server
+
+      - name: Build desktop app (tsc + esbuild server bundle)
+        run: npm run build -w @ai-pulse/widget
+
+      - name: Syntax-check browser JS
+        run: |
+          node --check packages/web/app.js
+          node --check packages/widget/renderer/settings.js
+
+      - name: Sanity-check the bundled server boots
+        run: |
+          mkdir -p /tmp/aipulse
+          cd packages/widget/dist/server
+          AI_PULSE_DATA_DIR=/tmp/aipulse \
+          AI_PULSE_RESOURCE_DIR="$PWD" \
+          AI_PULSE_WEB_DIR="$PWD/web" \
+          PORT=3901 node index.mjs &
+          SERVER_PID=$!
+          for i in $(seq 1 20); do
+            if curl -sf http://localhost:3901/api/health > /dev/null; then
+              echo "server healthy"; kill $SERVER_PID; exit 0
+            fi
+            sleep 1
+          done
+          echo "server did not become healthy"; kill $SERVER_PID; exit 1
