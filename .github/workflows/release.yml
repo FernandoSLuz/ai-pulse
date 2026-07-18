@@ -23,6 +23,9 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Rebuild native modules for Electron
+        run: npx --yes @electron/rebuild -v 33.4.11 -o better-sqlite3
+
       - name: Build installer (electron-builder NSIS)
         run: npm run dist:ci -w @ai-pulse/widget
         env:
