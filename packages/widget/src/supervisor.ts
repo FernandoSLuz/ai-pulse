@@ -8,6 +8,8 @@ export interface ServerStatus {
   running: boolean;
   pid: number | null;
   healthy: boolean;
+  adopted: boolean;
+  failed: boolean;
   restarts: number;
   lastHealthyAt: string | null;
   lastExitCode: number | null;
@@ -19,15 +21,22 @@ const HEALTH_INTERVAL_MS = 20_000;
 const HEALTH_TIMEOUT_MS = 5_000;
 const HEALTH_FAILS_BEFORE_KILL = 3; // ~1 min unresponsive => assume hang, restart
 const MAX_BACKOFF_MS = 30_000;
+const MAX_NEVER_HEALTHY_RESTARTS = 10; // give up (and surface) if it never boots healthy
 const LOG_ROTATE_BYTES = 5 * 1024 * 1024;
 
 /**
  * Owns the background server process and keeps it alive. Restarts on crash
  * (with exponential backoff) and on hang (detected by failing health pings),
- * unless the user explicitly stopped it from the tray/settings.
+ * unless the user explicitly stopped it. If a server is already listening on
+ * our port (e.g. an orphan left by a previous ungraceful exit) it is adopted
+ * rather than fought with, and a circuit breaker surfaces a "failed" state
+ * instead of thrashing forever when the server can never boot healthy.
  */
 export class ServerSupervisor extends EventEmitter {
   private child: ChildProcess | null = null;
+  private adopted = false; // using a server already running on our port
+  private spawning = false; // async spawn in flight (guards re-entrancy)
+  private failed = false; // gave up after repeated failed boots
   private userStopped = false;
   private restarts = 0;
   private restartTimer: NodeJS.Timeout | null = null;
@@ -40,25 +49,30 @@ export class ServerSupervisor extends EventEmitter {
 
   start(): void {
     this.userStopped = false;
-    if (this.child) return;
-    this.spawnChild();
+    this.failed = false;
+    this.restarts = 0;
     this.startHealthMonitor();
+    if (this.child || this.adopted || this.spawning) return;
+    void this.spawnChild();
   }
 
   /** User-initiated stop — do not auto-restart until start() is called again. */
   stop(): void {
     this.userStopped = true;
     this.clearRestartTimer();
+    this.adopted = false; // we hold no handle to an adopted process; just release it
     this.killChild();
     this.emitStatus();
   }
 
   restart(): void {
     this.userStopped = false;
+    this.failed = false;
     this.clearRestartTimer();
     if (this.child) {
-      this.killChild(); // exit handler will respawn
+      this.killChild(); // exit handler respawns
     } else {
+      this.adopted = false;
       this.start();
     }
   }
@@ -81,9 +95,11 @@ export class ServerSupervisor extends EventEmitter {
 
   getStatus(): ServerStatus {
     return {
-      running: this.child !== null,
+      running: this.child !== null || this.adopted,
       pid: this.child?.pid ?? null,
       healthy: this.healthy,
+      adopted: this.adopted,
+      failed: this.failed,
       restarts: this.restarts,
       lastHealthyAt: this.lastHealthyAt ? new Date(this.lastHealthyAt).toISOString() : null,
       lastExitCode: this.lastExitCode,
@@ -94,60 +110,93 @@ export class ServerSupervisor extends EventEmitter {
 
   // --- internals ------------------------------------------------------------
 
-  private spawnChild(): void {
-    const config = loadConfig();
-    this.port = config.port;
-    fs.mkdirSync(logDir(), { recursive: true });
-    this.rotateLogIfLarge();
-    const out = fs.openSync(serverLogPath(), "a");
+  private async spawnChild(): Promise<void> {
+    if (this.spawning || this.child) return;
+    this.spawning = true;
+    try {
+      const config = loadConfig();
+      this.port = config.port;
 
-    const child = spawn(process.execPath, [serverEntry()], {
-      env: serverEnv(config),
-      stdio: ["ignore", out, out],
-      windowsHide: true,
-    });
-    this.child = child;
-    this.healthy = false;
-
-    // Both 'exit' and 'error' (which can fire without a following 'exit' on a
-    // spawn failure, and sometimes both fire) route through one idempotent
-    // handler so we always close the log fd and schedule exactly one restart.
-    let handled = false;
-    const onGone = (code: number | null) => {
-      if (handled) return;
-      handled = true;
-      this.lastExitCode = code;
-      this.child = null;
-      this.healthy = false;
-      this.consecutiveHealthFails = 0;
-      try {
-        fs.closeSync(out);
-      } catch {
-        /* already closed */
+      // If a server already answers on our port (most likely an orphan from a
+      // previous ungraceful exit), adopt it instead of spawning a duplicate that
+      // would collide on the port and restart-loop forever.
+      if (await this.pingHealth()) {
+        this.adopted = true;
+        this.healthy = true;
+        this.lastHealthyAt = Date.now();
+        this.consecutiveHealthFails = 0;
+        this.restarts = 0;
+        console.warn(`[Supervisor] Adopted an existing healthy server on port ${this.port}.`);
+        this.emitStatus();
+        return;
       }
-      this.emitStatus();
-      if (!this.userStopped) {
+      this.adopted = false;
+
+      fs.mkdirSync(logDir(), { recursive: true });
+      this.rotateLogIfLarge();
+      const out = fs.openSync(serverLogPath(), "a");
+
+      const child = spawn(process.execPath, [serverEntry()], {
+        env: serverEnv(config),
+        stdio: ["ignore", out, out],
+        windowsHide: true,
+      });
+      this.child = child;
+      this.healthy = false;
+
+      // Both 'exit' and 'error' (which can fire without a following 'exit' on a
+      // spawn failure, and sometimes both fire) route through one idempotent
+      // handler so we always close the log fd and schedule exactly one restart.
+      let handled = false;
+      const onGone = (code: number | null) => {
+        if (handled) return;
+        handled = true;
+        this.lastExitCode = code;
+        this.child = null;
+        this.healthy = false;
+        this.consecutiveHealthFails = 0;
+        try {
+          fs.closeSync(out);
+        } catch {
+          /* already closed */
+        }
+        this.emitStatus();
+        if (this.userStopped) return;
+
         this.restarts += 1;
+        // Circuit breaker: if the server has NEVER booted healthy across many
+        // attempts (e.g. a persistent port collision we can't adopt, or a broken
+        // build), stop looping and surface it instead of thrashing forever.
+        if (this.lastHealthyAt === null && this.restarts >= MAX_NEVER_HEALTHY_RESTARTS) {
+          this.failed = true;
+          console.error(
+            `[Supervisor] Server never started healthy after ${this.restarts} attempts — giving up. Use "Start" to retry.`,
+          );
+          this.emitStatus();
+          return;
+        }
         const delay = Math.min(MAX_BACKOFF_MS, 1000 * 2 ** Math.min(this.restarts, 5));
         console.warn(`[Supervisor] Server gone (code ${code}). Restart #${this.restarts} in ${delay}ms.`);
         this.scheduleRestart(delay);
-      }
-    };
+      };
 
-    child.on("exit", (code) => onGone(code));
-    child.on("error", (err) => {
-      console.error("[Supervisor] Server process error:", err.message);
-      onGone(null);
-    });
+      child.on("exit", (code) => onGone(code));
+      child.on("error", (err) => {
+        console.error("[Supervisor] Server process error:", err.message);
+        onGone(null);
+      });
 
-    this.emitStatus();
+      this.emitStatus();
+    } finally {
+      this.spawning = false;
+    }
   }
 
   private scheduleRestart(delayMs: number): void {
     this.clearRestartTimer();
     this.restartTimer = setTimeout(() => {
       this.restartTimer = null;
-      if (!this.userStopped && !this.child) this.spawnChild();
+      if (!this.userStopped && !this.child && !this.adopted) void this.spawnChild();
     }, delayMs);
   }
 
@@ -184,22 +233,28 @@ export class ServerSupervisor extends EventEmitter {
   }
 
   private async checkHealth(): Promise<void> {
-    if (!this.child || this.userStopped) return;
+    if ((!this.child && !this.adopted) || this.userStopped) return;
     const ok = await this.pingHealth();
     if (ok) {
       this.healthy = true;
       this.lastHealthyAt = Date.now();
       this.consecutiveHealthFails = 0;
       this.restarts = 0; // recovered — reset backoff
+      this.failed = false;
     } else {
       this.healthy = false;
       this.consecutiveHealthFails += 1;
       if (this.consecutiveHealthFails >= HEALTH_FAILS_BEFORE_KILL) {
-        console.warn(
-          `[Supervisor] Server unresponsive (${this.consecutiveHealthFails} failed health checks) — restarting.`,
-        );
         this.consecutiveHealthFails = 0;
-        this.killChild(); // exit handler respawns
+        if (this.adopted) {
+          // The adopted server stopped responding — take over by spawning ours.
+          console.warn("[Supervisor] Adopted server stopped responding — starting our own.");
+          this.adopted = false;
+          void this.spawnChild();
+        } else {
+          console.warn("[Supervisor] Server unresponsive — restarting.");
+          this.killChild(); // exit handler respawns
+        }
       }
     }
     this.emitStatus();
