@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld("aiPulse", {
   toggleLeaderboard: (show: boolean) => ipcRenderer.invoke("leaderboard:toggle", show),
   openDashboard: () => ipcRenderer.invoke("app:openDashboard"),
   openLogs: () => ipcRenderer.invoke("app:openLogs"),
+  openExternal: (url: string) => ipcRenderer.invoke("app:openExternal", url),
   serverHealth: () => ipcRenderer.invoke("server:health"),
   apiGet: (path: string) => ipcRenderer.invoke("api:get", path),
   apiPut: (path: string, body: unknown) => ipcRenderer.invoke("api:put", path, body),

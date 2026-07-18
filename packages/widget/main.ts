@@ -297,6 +297,10 @@ function registerIpc(): void {
 
   ipcMain.handle("app:openDashboard", () => void shell.openExternal(dashboardUrl()));
   ipcMain.handle("app:openLogs", () => void shell.openPath(serverLogPath()));
+  ipcMain.handle("app:openExternal", (_e, url: string) => {
+    // Only ever open normal web links (e.g. provider key pages).
+    if (typeof url === "string" && /^https?:\/\//i.test(url)) void shell.openExternal(url);
+  });
 
   // Proxy the server health JSON so the renderer avoids cross-origin fetches.
   ipcMain.handle("server:health", async () => {
