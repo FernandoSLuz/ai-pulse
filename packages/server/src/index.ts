@@ -605,6 +605,14 @@ setInterval(() => {
   }
 }, Math.min(AA_POLL / 4, 30 * 60_000));
 
+server.on("error", (err) => {
+  const code = (err as NodeJS.ErrnoException).code;
+  console.error(`[Server] Listen error${code ? ` (${code})` : ""}: ${err.message}`);
+  // Exit non-zero so the desktop supervisor restarts us (with backoff) instead
+  // of leaving an unhandled 'error' event to crash the process.
+  process.exit(1);
+});
+
 server.listen(PORT, () => {
   console.log(`AI Pulse server running at http://localhost:${PORT}`);
   bootstrap().catch((err) => console.error("Bootstrap failed:", err));

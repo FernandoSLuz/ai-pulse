@@ -109,7 +109,13 @@ export class ServerSupervisor extends EventEmitter {
     this.child = child;
     this.healthy = false;
 
-    child.on("exit", (code) => {
+    // Both 'exit' and 'error' (which can fire without a following 'exit' on a
+    // spawn failure, and sometimes both fire) route through one idempotent
+    // handler so we always close the log fd and schedule exactly one restart.
+    let handled = false;
+    const onGone = (code: number | null) => {
+      if (handled) return;
+      handled = true;
       this.lastExitCode = code;
       this.child = null;
       this.healthy = false;
@@ -123,13 +129,15 @@ export class ServerSupervisor extends EventEmitter {
       if (!this.userStopped) {
         this.restarts += 1;
         const delay = Math.min(MAX_BACKOFF_MS, 1000 * 2 ** Math.min(this.restarts, 5));
-        console.warn(`[Supervisor] Server exited (code ${code}). Restart #${this.restarts} in ${delay}ms.`);
+        console.warn(`[Supervisor] Server gone (code ${code}). Restart #${this.restarts} in ${delay}ms.`);
         this.scheduleRestart(delay);
       }
-    });
+    };
 
+    child.on("exit", (code) => onGone(code));
     child.on("error", (err) => {
-      console.error("[Supervisor] Failed to spawn server:", err.message);
+      console.error("[Supervisor] Server process error:", err.message);
+      onGone(null);
     });
 
     this.emitStatus();
@@ -154,7 +162,10 @@ export class ServerSupervisor extends EventEmitter {
     try {
       child.kill(); // Windows: TerminateProcess (immediate); POSIX: SIGTERM
       setTimeout(() => {
-        if (this.child === child && !child.killed) {
+        // If the exit handler still hasn't nulled this.child, the process
+        // ignored SIGTERM — force-kill it. (child.killed only reflects that a
+        // signal was sent, not that the process died, so it can't gate this.)
+        if (this.child === child) {
           try {
             child.kill("SIGKILL");
           } catch {
