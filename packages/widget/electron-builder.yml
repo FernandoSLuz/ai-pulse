@@ -2,6 +2,11 @@ appId: com.aipulse.desktop
 productName: AI Pulse
 copyright: © 2026 Fernando Luz
 
+# electron is hoisted to the repo-root node_modules by npm workspaces, so
+# electron-builder (run from packages/widget) can't auto-detect the version.
+# Pin it explicitly; electron-builder fetches the matching dist for packaging.
+electronVersion: 33.4.11
+
 directories:
   output: release
   buildResources: build
