@@ -1,0 +1,18 @@
+{
+  "name": "@ai-pulse/widget",
+  "version": "1.0.0",
+  "private": true,
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc && node -e \"require('fs').cpSync('assets','dist/assets',{recursive:true})\"",
+    "start": "electron dist/main.js",
+    "dev": "npm run build && electron dist/main.js"
+  },
+  "dependencies": {
+    "electron": "^33.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.2"
+  }
+}

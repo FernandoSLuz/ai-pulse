@@ -1,0 +1,31 @@
+{
+  "feeds": [
+    { "url": "https://openai.com/news/rss.xml", "source": "OpenAI", "tier": 1 },
+    { "url": "https://blog.google/technology/ai/rss/", "source": "Google AI", "tier": 1 },
+    { "url": "https://huggingface.co/blog/feed.xml", "source": "Hugging Face", "tier": 1 },
+    { "url": "https://www.microsoft.com/en-us/research/feed/", "source": "Microsoft Research", "tier": 1 },
+    { "url": "https://deepmind.google/blog/rss.xml", "source": "Google DeepMind", "tier": 1 },
+    { "url": "https://engineering.fb.com/feed/", "source": "Meta Engineering", "tier": 1 },
+    { "url": "https://www.marktechpost.com/feed/", "source": "MarkTechPost", "tier": 2 },
+    { "url": "https://the-decoder.com/feed/", "source": "The Decoder", "tier": 2 },
+    { "url": "https://laxima.tech/signal/feed.xml", "source": "LAXIMA Signal", "tier": 2 },
+    { "url": "https://simonwillison.net/atom/everything/", "source": "Simon Willison", "tier": 2 },
+    { "url": "https://techcrunch.com/category/artificial-intelligence/feed/", "source": "TechCrunch AI", "tier": 2 },
+    { "url": "https://venturebeat.com/category/ai/feed/", "source": "VentureBeat AI", "tier": 2 },
+    { "url": "https://arstechnica.com/ai/feed/", "source": "Ars Technica AI", "tier": 2 },
+    { "url": "https://hnrss.org/newest?q=AI+OR+LLM+OR+GPT+OR+Claude", "source": "Hacker News AI", "tier": 3 },
+    { "url": "https://www.reddit.com/r/LocalLLaMA/.rss", "source": "r/LocalLLaMA", "tier": 3 }
+  ],
+  "youtubeChannels": [
+    { "name": "Matt Wolfe", "handle": "mreflow", "channelId": "UChpleBmo18P08aKCIgti38g" },
+    { "name": "Two Minute Papers", "handle": "TwoMinutePapers", "channelId": "UCbfYPyITQ-7l4upoX8nvctg" },
+    { "name": "AI Explained", "handle": "aiexplained-official", "channelId": "UCNJ1Ymd5yFuUPtn21xtRbbw" },
+    { "name": "Wes Roth", "handle": "WesRoth", "channelId": "UCqcbQf6yw5KzRoDDcZ_wBSw" },
+    { "name": "Matthew Berman", "handle": "matthew_berman", "channelId": "UCawZsQWqfGSbCI5yjkdVkTA" },
+    { "name": "The AI Advantage", "handle": "AIAdvantage", "channelId": "UCHhYXsLBEVVnbvsq57n1MTQ" },
+    { "name": "Yannic Kilcher", "handle": "YannicKilcher", "channelId": "UCZHmQk67mSJgfCCTn7xBfew" },
+    { "name": "TheAIGRID", "handle": "TheAIGRID", "channelId": "UCbY9xX3_jW5c2fjlZVBI4cg" },
+    { "name": "Andrej Karpathy", "handle": "AndrejKarpathy", "channelId": "UCXUPKJO5MZQN11PqgIvyuvQ" },
+    { "name": "All About AI", "handle": "AllAboutAI", "channelId": "UCR9j1jqqB5Rse69wjUnbYwA" }
+  ]
+}

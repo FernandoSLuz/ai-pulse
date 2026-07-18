@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>AI Pulse Widget</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="widget-body">
+  <div class="widget-container" id="widget-root">
+    <div id="widget-headline" class="widget-headline">Loading…</div>
+    <div id="widget-aipick" class="widget-aipick hidden"></div>
+    <div id="widget-creator" class="widget-creator hidden"></div>
+    <div id="widget-health" class="widget-health hidden"></div>
+    <div id="widget-stack" class="widget-stack"></div>
+    <input type="search" id="widget-search" class="widget-search" placeholder="Search models…" autocomplete="off" spellcheck="false" />
+    <div class="widget-table-wrap" id="widget-scroll">
+      <table class="widget-table">
+        <colgroup>
+          <col class="col-rank" />
+          <col class="col-role" />
+          <col class="col-name" />
+          <col class="col-num" />
+          <col class="col-num" />
+          <col class="col-num" />
+          <col class="col-num" />
+          <col class="col-num" />
+          <col class="col-acc" />
+        </colgroup>
+        <thead>
+          <tr id="widget-thead">
+            <th>#</th>
+            <th>Role</th>
+            <th class="sortable" data-sort="name">Model</th>
+            <th class="sortable" data-sort="intelligence">Int</th>
+            <th class="sortable" data-sort="coding">Code</th>
+            <th class="sortable" data-sort="math">Math</th>
+            <th class="sortable" data-sort="priceBlended">$/1M</th>
+            <th class="sortable" data-sort="speed">Spd</th>
+            <th class="sortable" data-sort="accessibilityScore">Acc</th>
+          </tr>
+        </thead>
+        <tbody id="widget-rows"></tbody>
+      </table>
+    </div>
+    <div id="widget-count" class="widget-count"></div>
+  </div>
+  <script type="module">
+    const rowsEl = document.getElementById("widget-rows");
+    const headline = document.getElementById("widget-headline");
+    const healthEl = document.getElementById("widget-health");
+    const stackEl = document.getElementById("widget-stack");
+    const searchEl = document.getElementById("widget-search");
+    const scrollEl = document.getElementById("widget-scroll");
+    const countEl = document.getElementById("widget-count");
+    const aipickEl = document.getElementById("widget-aipick");
+    const creatorEl = document.getElementById("widget-creator");
+    let stack = null;
+    let rankings = null;
+    let maxHeight = 780;
+    let query = "";
+    let sortKey = "intelligence";
+    let sortDir = "desc";
+    const MAX_DEFAULT_ROWS = 25;
+    const MAX_SEARCH_ROWS = 30;
+    const ROW_HEIGHT = 21;
+
+    const ROLE_META = {
+      primary: { short: "Pri", label: "Primary", className: "role-primary" },
+      secondary: { short: "Bud", label: "Budget", className: "role-secondary" },
+      free: { short: "Free", label: "Free", className: "role-free" },
+    };
+
+    const SORTABLE = {
+      name: { key: "name", type: "string", defaultDir: "asc", label: "Model" },
+      intelligence: { key: "intelligence", type: "number", defaultDir: "desc", label: "Int" },
+      coding: { key: "coding", type: "number", defaultDir: "desc", label: "Code" },
+      math: { key: "math", type: "number", defaultDir: "desc", label: "Math" },
+      priceBlended: { key: "priceBlended", type: "number", defaultDir: "asc", label: "$/1M" },
+      speed: { key: "speed", type: "number", defaultDir: "desc", label: "Spd" },
+      accessibilityScore: { key: "accessibilityScore", type: "number", defaultDir: "desc", label: "Acc" },
+    };
+
+    function sortModels(models) {
+      const col = SORTABLE[sortKey];
+      if (!col) return models;
+      return [...models].sort((a, b) => {
+        if (col.type === "string") {
+          const va = String(a[col.key] ?? "").toLowerCase();
+          const vb = String(b[col.key] ?? "").toLowerCase();
+          return sortDir === "asc" ? va.localeCompare(vb) : vb.localeCompare(va);
+        }
+        const va = Number(a[col.key]) || 0;
+        const vb = Number(b[col.key]) || 0;
+        return sortDir === "asc" ? va - vb : vb - va;
+      });
+    }
+
+    function updateSortHeaders() {
+      document.querySelectorAll(".widget-table th.sortable").forEach((th) => {
+        const key = th.dataset.sort;
+        const col = SORTABLE[key];
+        const arrow = sortKey === key ? (sortDir === "asc" ? " ▲" : " ▼") : "";
+        th.textContent = (col?.label ?? key) + arrow;
+        th.classList.toggle("sort-active", sortKey === key);
+        th.classList.toggle("sort-asc", sortKey === key && sortDir === "asc");
+        th.classList.toggle("sort-desc", sortKey === key && sortDir === "desc");
+      });
+    }
+
+    function onHeaderClick(key) {
+      if (!SORTABLE[key]) return;
+      if (sortKey === key) {
+        sortDir = sortDir === "asc" ? "desc" : "asc";
+      } else {
+        sortKey = key;
+        sortDir = SORTABLE[key].defaultDir;
+      }
+      updateSortHeaders();
+      render();
+    }
+
+    if (window.aiPulse?.getMaxHeight) {
+      window.aiPulse.getMaxHeight().then((h) => { maxHeight = h; fitWindow(); });
+    }
+
+    function fmt(n) { return n > 0 ? Math.round(n * 10) / 10 : "—"; }
+    function escapeHtml(s) {
+      return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+    function escapeAttr(s) { return escapeHtml(s).replace(/"/g, "&quot;"); }
+
+    function cleanHeadline(text) {
+      return String(text).replace(/\((\d+\.\d{2,})\)/g, (_, n) => `(${Number(n).toFixed(1)})`);
+    }
+
+    function shortAccess(a) {
+      if (!a) return "—";
+      if (a.includes("Open")) return "Open";
+      if (a.includes("Gated")) return "Gated";
+      return "API";
+    }
+
+    function winnerMark(slug, winners) {
+      if (!winners) return "";
+      if (winners.overall === slug) return "★";
+      if (winners.coding === slug) return "C";
+      if (winners.math === slug) return "M";
+      if (winners.price === slug) return "$";
+      if (winners.speed === slug) return "S";
+      return "";
+    }
+
+    function shortName(name) {
+      return String(name)
+        .replace(/\s*\((?:Adaptive Reasoning|Non-reasoning|reasoning|Non-thinking|thinking)[^)]*\)/gi, "")
+        .replace(/\s*\([^)]{18,}\)/g, "")
+        .replace(/\s{2,}/g, " ")
+        .trim();
+    }
+
+    function displayLimit() {
+      return query.trim() ? MAX_SEARCH_ROWS : MAX_DEFAULT_ROWS;
+    }
+
+    function filterModels(models) {
+      const q = query.trim().toLowerCase();
+      if (!q) return models;
+      return models.filter((m) =>
+        m.name.toLowerCase().includes(q) ||
+        m.creator.toLowerCase().includes(q) ||
+        m.slug.toLowerCase().includes(q) ||
+        (m.accessibility && m.accessibility.toLowerCase().includes(q))
+      );
+    }
+
+    /** Map slug → stack roles (a model can appear in multiple roles). */
+    function stackRoleMap() {
+      const map = new Map();
+      for (const e of stack?.entries ?? []) {
+        if (!e.modelSlug) continue;
+        const list = map.get(e.modelSlug) ?? [];
+        list.push(e);
+        map.set(e.modelSlug, list);
+      }
+      return map;
+    }
+
+    function intelRankIndex(slug) {
+      if (!rankings?.models?.length) return -1;
+      const byIntel = [...rankings.models].sort((a, b) => b.intelligence - a.intelligence);
+      return byIntel.findIndex((m) => m.slug === slug);
+    }
+
+    function leaderIntel() {
+      if (!rankings?.models?.length) return 0;
+      return Math.max(...rankings.models.map((m) => m.intelligence || 0));
+    }
+
+    function renderStackStrip() {
+      const entries = (stack?.entries ?? []).filter((e) => e.modelSlug);
+      const gaps = stack?.roleGaps ?? [];
+      const top = leaderIntel();
+
+      if (!entries.length && !gaps.length) {
+        stackEl.innerHTML = `<div class="widget-stack-empty">Set picks in My Stack on the dashboard to see where you stand.</div>`;
+        return;
+      }
+
+      const cards = entries.map((e) => {
+        const meta = ROLE_META[e.role] || { short: e.role, label: e.role, className: "role-primary" };
+        const model = rankings?.models?.find((m) => m.slug === e.modelSlug);
+        const rank = intelRankIndex(e.modelSlug);
+        const intel = model?.intelligence ?? 0;
+        const delta = top && intel ? intel - top : 0;
+        const providers = (e.providers ?? []).join(", ") || "—";
+        const rankLabel = rank >= 0 ? `#${rank + 1}` : "—";
+        const deltaLabel = !model
+          ? "not in board"
+          : delta >= -0.05
+            ? "at top"
+            : `${delta.toFixed(1)} vs #1`;
+
+        return `<div class="stack-pick ${meta.className}" title="${escapeAttr(meta.label)} · ${escapeAttr(providers)}">
+          <div class="stack-pick-role">${escapeHtml(meta.label)}</div>
+          <div class="stack-pick-name">${escapeHtml(shortName(e.modelName || e.modelSlug))}</div>
+          <div class="stack-pick-stand">
+            <span class="stack-pick-rank">${rankLabel}</span>
+            <span class="stack-pick-intel">${fmt(intel)}</span>
+            <span class="stack-pick-delta">${escapeHtml(deltaLabel)}</span>
+          </div>
+        </div>`;
+      });
+
+      const gapCards = gaps.map((g) => {
+        const meta = ROLE_META[g.role] || { short: g.role, label: g.role, className: "role-free" };
+        return `<div class="stack-pick stack-pick-gap ${meta.className}">
+          <div class="stack-pick-role">Missing ${escapeHtml(meta.label)}</div>
+          <div class="stack-pick-name">Try ${escapeHtml(shortName(g.modelName))}</div>
+          <div class="stack-pick-stand"><span class="stack-pick-delta">add on dashboard</span></div>
+        </div>`;
+      });
+
+      stackEl.innerHTML = `<div class="widget-stack-row">${cards.join("")}${gapCards.join("")}</div>`;
+    }
+
+    function roleCell(entries) {
+      if (!entries?.length) return `<td class="c-role"></td>`;
+      return `<td class="c-role">${entries.map((e) => {
+        const meta = ROLE_META[e.role] || { short: "?", className: "role-primary" };
+        return `<span class="role-pill ${meta.className}" title="${escapeAttr(meta.label || e.role)}">${escapeHtml(meta.short)}</span>`;
+      }).join("")}</td>`;
+    }
+
+    function render() {
+      renderStackStrip();
+
+      if (!rankings?.models?.length) {
+        rowsEl.innerHTML = '<tr><td colspan="9" class="widget-empty">Waiting for data…</td></tr>';
+        countEl.textContent = "";
+        fitWindow();
+        return;
+      }
+
+      const rolesBySlug = stackRoleMap();
+      const winners = rankings.winners;
+      const all = rankings.models;
+      const filtered = sortModels(filterModels(all));
+      const limit = displayLimit();
+      const visible = filtered.slice(0, limit);
+      const enableScroll = Boolean(query.trim()) && filtered.length > MAX_SEARCH_ROWS;
+
+      // Keep stack picks visible even if outside top N (when not searching)
+      let rows = visible;
+      if (!query.trim()) {
+        const shown = new Set(visible.map((m) => m.slug));
+        const extras = [];
+        for (const slug of rolesBySlug.keys()) {
+          if (shown.has(slug)) continue;
+          const m = all.find((x) => x.slug === slug);
+          if (m) extras.push(m);
+        }
+        if (extras.length) rows = [...extras, ...visible];
+      }
+
+      if (filtered.length === 0) {
+        rowsEl.innerHTML = '<tr><td colspan="9" class="widget-empty">No models match your search</td></tr>';
+        countEl.textContent = query ? `0 of ${all.length} models` : "";
+        fitWindow();
+        return;
+      }
+
+      rowsEl.innerHTML = rows.map((m, i) => {
+        const mineEntries = rolesBySlug.get(m.slug);
+        const isMine = Boolean(mineEntries?.length);
+        const win = winnerMark(m.slug, winners);
+        // Rank by intelligence standing, not display order
+        const standing = intelRankIndex(m.slug);
+        const rankNum = standing >= 0 ? standing + 1 : i + 1;
+        const rank = win ? `${rankNum}<span class="widget-win">${win}</span>` : String(rankNum);
+        const rowClass = `${isMine ? "is-mine" : ""} ${standing === 0 ? "is-top" : ""} ${m.url ? "is-link" : ""}`.trim();
+        const dataHref = m.url ? ` data-href="${escapeAttr(m.url)}"` : "";
+        const label = shortName(m.name);
+        const roleTitles = (mineEntries ?? []).map((e) => ROLE_META[e.role]?.label || e.role).join(", ");
+
+        return `
+        <tr class="${rowClass}"${dataHref} title="${escapeAttr(m.name)} · ${escapeAttr(m.creator)}${roleTitles ? ` · Your ${roleTitles}` : ""}${m.url ? " — click to open" : ""}">
+          <td class="c-rank">${rank}</td>
+          ${roleCell(mineEntries)}
+          <td class="c-name ${sortKey === "name" ? "c-sort-active" : ""}">${escapeHtml(label)}</td>
+          <td class="c-num c-intel ${sortKey === "intelligence" ? "c-sort-active" : ""}">${fmt(m.intelligence)}</td>
+          <td class="c-num ${sortKey === "coding" ? "c-sort-active" : ""}">${fmt(m.coding)}</td>
+          <td class="c-num ${sortKey === "math" ? "c-sort-active" : ""}">${fmt(m.math)}</td>
+          <td class="c-num ${sortKey === "priceBlended" ? "c-sort-active" : ""}">${m.priceBlended > 0 ? m.priceBlended.toFixed(2) : "—"}</td>
+          <td class="c-num ${sortKey === "speed" ? "c-sort-active" : ""}">${m.speed > 0 ? Math.round(m.speed) : "—"}</td>
+          <td class="c-acc ${sortKey === "accessibilityScore" ? "c-sort-active" : ""}">${shortAccess(m.accessibility)}</td>
+        </tr>`;
+      }).join("");
+
+      rowsEl.querySelectorAll("tr[data-href]").forEach((tr) => {
+        tr.addEventListener("click", () => {
+          const url = tr.getAttribute("data-href");
+          if (url) window.open(url, "_blank", "noopener");
+        });
+      });
+
+      if (query) {
+        countEl.textContent = filtered.length > visible.length
+          ? `${visible.length} of ${filtered.length} matches`
+          : `${filtered.length} match${filtered.length === 1 ? "" : "es"}`;
+      } else {
+        const pickCount = rolesBySlug.size;
+        countEl.textContent = all.length > MAX_DEFAULT_ROWS
+          ? `Top ${visible.length} of ${all.length}${pickCount ? ` · ${pickCount} pick${pickCount === 1 ? "" : "s"}` : ""} · search for more`
+          : `${all.length} models`;
+      }
+
+      if (rankings.health?.stale && rankings.health.warning) {
+        healthEl.textContent = rankings.health.warning;
+        healthEl.classList.remove("hidden");
+      } else {
+        healthEl.textContent = "";
+        healthEl.classList.add("hidden");
+      }
+
+      scrollEl.classList.toggle("is-scrollable", enableScroll);
+      fitWindow();
+    }
+
+    function fitWindow() {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const isScrollable = scrollEl.classList.contains("is-scrollable");
+          const thead = scrollEl.querySelector("thead");
+          const theadH = thead?.offsetHeight ?? 26;
+          const tbody = rowsEl;
+
+          document.documentElement.style.setProperty("--widget-row-h", `${ROW_HEIGHT}px`);
+
+          if (isScrollable) {
+            scrollEl.style.overflowY = "auto";
+            scrollEl.style.maxHeight = `${MAX_DEFAULT_ROWS * ROW_HEIGHT + theadH}px`;
+          } else {
+            scrollEl.style.overflowY = "hidden";
+            scrollEl.style.maxHeight = "none";
+          }
+
+          const tableH = isScrollable
+            ? MAX_DEFAULT_ROWS * ROW_HEIGHT + theadH
+            : tbody.offsetHeight + theadH;
+          const chrome =
+            headline.offsetHeight +
+            (aipickEl.classList.contains("hidden") ? 0 : aipickEl.offsetHeight) +
+            (creatorEl.classList.contains("hidden") ? 0 : creatorEl.offsetHeight) +
+            (healthEl.classList.contains("hidden") ? 0 : healthEl.offsetHeight) +
+            stackEl.offsetHeight +
+            searchEl.offsetHeight +
+            countEl.offsetHeight +
+            52;
+          const needed = chrome + tableH + 4;
+          window.aiPulse?.resizeWidget?.(Math.min(maxHeight, needed));
+        });
+      });
+    }
+
+    searchEl.addEventListener("input", (e) => {
+      query = e.target.value;
+      render();
+    });
+
+    function renderAiPickStrip(items) {
+      const top = items?.[0];
+      if (!top) {
+        aipickEl.classList.add("hidden");
+        aipickEl.innerHTML = "";
+        return;
+      }
+      aipickEl.classList.remove("hidden");
+      aipickEl.innerHTML = `<div class="label">AI Pick</div><a href="${escapeAttr(top.link)}" target="_blank" rel="noopener">${escapeHtml(top.title)}</a>`;
+    }
+
+    function renderCreatorStrip(items) {
+      const top = items?.[0];
+      if (!top) {
+        creatorEl.classList.add("hidden");
+        creatorEl.innerHTML = "";
+        return;
+      }
+      creatorEl.classList.remove("hidden");
+      creatorEl.innerHTML = `<div class="label">${escapeHtml(top.channel)}</div><a href="${escapeAttr(top.link)}" target="_blank" rel="noopener">${escapeHtml(top.title)}</a>`;
+    }
+
+    async function load() {
+      try {
+        [rankings, stack] = await Promise.all([
+          fetch("/api/rankings").then((r) => r.json()),
+          fetch("/api/stack").then((r) => r.json()),
+        ]);
+        const [briefing, picks, videos] = await Promise.all([
+          fetch("/api/briefing").then((r) => r.json()),
+          fetch("/api/news?view=ai_pick&period=today&limit=3").then((r) => r.json()),
+          fetch("/api/videos?limit=3").then((r) => r.json()),
+        ]);
+        if (briefing?.headline) headline.textContent = cleanHeadline(briefing.headline);
+        renderAiPickStrip(picks?.items);
+        renderCreatorStrip(videos?.items);
+        render();
+      } catch {
+        headline.textContent = "Server offline";
+        fitWindow();
+      }
+    }
+
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    function connectWs() {
+      const ws = new WebSocket(`${proto}://${location.host}/ws`);
+      ws.onmessage = (ev) => {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === "rankings") { rankings = msg.payload; render(); }
+        if (msg.type === "stack") { stack = msg.payload; render(); }
+        if (msg.type === "briefing" && msg.payload?.headline) {
+          headline.textContent = cleanHeadline(msg.payload.headline);
+          fitWindow();
+        }
+        if (msg.type === "ai_picks") {
+          renderAiPickStrip(msg.payload?.today);
+          fitWindow();
+        }
+        if (msg.type === "videos") {
+          renderCreatorStrip(msg.payload?.items);
+          fitWindow();
+        }
+      };
+      ws.onclose = () => setTimeout(connectWs, 3000);
+    }
+
+    load();
+    connectWs();
+    setInterval(load, 120000);
+
+    document.querySelectorAll(".widget-table th.sortable").forEach((th) => {
+      th.addEventListener("click", (e) => {
+        e.stopPropagation();
+        onHeaderClick(th.dataset.sort);
+      });
+    });
+    updateSortHeaders();
+  </script>
+</body>
+</html>

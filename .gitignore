@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+packages/*/dist/
+packages/*/release/
+release/
+out/
+
+# Secrets & local config
+.env
+.env.local
+.env.*.local
+
+# Runtime data (databases, logs, user config)
+logs/
+*.log
+packages/server/data/
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+
+# Electron / installer build artifacts
+*.exe
+*.blockmap
+*.nsis.7z
+builder-debug.yml
+builder-effective-config.yaml
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
