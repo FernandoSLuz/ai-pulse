@@ -108,16 +108,14 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
 
 function classifyError(message: string): { reason: OutcomeReason; cooldownMs: number } {
   if (/429|rate.?limit|quota|RESOURCE_EXHAUSTED|tokens per (day|minute)|\bTPD\b|\bRPD\b/i.test(message)) {
-    // Honor an explicit retry hint if the provider gives one.
-    const retryMin = message.match(/try again in\s+(\d+)m([\d.]+)?s/i);
-    const retrySec = message.match(/retry in\s+([\d.]+)s/i);
+    // Honor an explicit retry hint if the provider gives one. Handles all of
+    // "try again in 2m51.936s", "try again in 43s", and "retry in 12s".
+    const retry = message.match(/(?:try again|retry) in\s+(?:(\d+)m)?([\d.]+)?s/i);
     let cooldownMs = RATE_LIMIT_DEFAULT_MS;
-    if (retryMin) {
-      const mins = Number(retryMin[1]) || 0;
-      const secs = Number(retryMin[2]) || 0;
-      cooldownMs = (mins * 60 + secs) * 1000 + 30_000;
-    } else if (retrySec) {
-      cooldownMs = (Number(retrySec[1]) + 5) * 1000;
+    if (retry && (retry[1] || retry[2])) {
+      const mins = Number(retry[1]) || 0;
+      const secs = Number(retry[2]) || 0;
+      cooldownMs = (mins * 60 + secs) * 1000 + (mins > 0 ? 30_000 : 3_000);
     }
     return { reason: "rate_limit", cooldownMs: Math.min(cooldownMs, RATE_LIMIT_MAX_MS) };
   }

@@ -105,6 +105,7 @@ export async function fetchArtificialAnalysisModels(apiKey?: string): Promise<Mo
     try {
       const res = await fetch(endpoint, {
         headers: { "x-api-key": apiKey, Accept: "application/json" },
+        signal: AbortSignal.timeout(10_000), // don't let a hung connection wedge the poll
       });
       if (!res.ok) {
         // 401/403 just means this endpoint isn't on the free plan — expected,

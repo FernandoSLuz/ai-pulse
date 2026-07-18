@@ -270,8 +270,10 @@ function registerIpc(): void {
   });
 
   ipcMain.handle("settings:setPrefs", (_e, prefs: Partial<AppConfig>) => {
-    const portChanged = typeof prefs.port === "number" && prefs.port !== config.port;
+    const prevPort = config.port;
     if (typeof prefs.port === "number" && prefs.port >= 1 && prefs.port <= 65535) config.port = prefs.port;
+    const portChanged = config.port !== prevPort; // only flag an actually-applied change
+    const hiddenChanged = typeof prefs.startHidden === "boolean" && prefs.startHidden !== config.startHidden;
     if (typeof prefs.startHidden === "boolean") config.startHidden = prefs.startHidden;
     if (prefs.leaderboard) {
       config.leaderboard = { ...config.leaderboard, ...prefs.leaderboard };
@@ -280,7 +282,17 @@ function registerIpc(): void {
     if (leaderboardWindow) applyLeaderboardBounds(leaderboardWindow.getBounds().height);
     leaderboardWindow?.setAlwaysOnTop(config.leaderboard.pinOnTop, "floating");
     if (typeof prefs.autoLaunch === "boolean") setAutoLaunch(prefs.autoLaunch);
-    if (portChanged) supervisor.restart();
+    else if (hiddenChanged && app.isPackaged) {
+      // Keep the login-item's --hidden arg in sync when only startHidden changed.
+      app.setLoginItemSettings({ openAtLogin: config.autoLaunch, args: config.startHidden ? ["--hidden"] : [] });
+    }
+    if (portChanged) {
+      supervisor.restart();
+      // The leaderboard is loaded against the old port; drop it so the
+      // healthy-status handler recreates it on the new port.
+      leaderboardWindow?.close();
+      leaderboardWindow = null;
+    }
     refreshTrayMenu();
     return settingsState();
   });
