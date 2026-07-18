@@ -1,0 +1,43 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  windows-installer:
+    name: Build Windows installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build installer (electron-builder NSIS)
+        run: npm run dist:ci -w @ai-pulse/widget
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          # Tags containing "-rc" (e.g. v1.2.0-rc.1) publish as a prerelease.
+          prerelease: ${{ contains(github.ref_name, '-rc') }}
+          generate_release_notes: true
+          fail_on_unmatched_files: false
+          files: |
+            packages/widget/release/*.exe
+            packages/widget/release/*.blockmap
+            packages/widget/release/latest.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
