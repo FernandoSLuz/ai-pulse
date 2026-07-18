@@ -1,0 +1,41 @@
+appId: com.aipulse.desktop
+productName: AI Pulse
+copyright: © 2026 Fernando Luz
+
+directories:
+  output: release
+  buildResources: build
+
+# asar disabled so the supervised server child resolves its externals
+# (better-sqlite3, node-notifier) via normal node_modules resolution.
+asar: false
+
+files:
+  - dist/**/*
+  - package.json
+  - "!**/*.map"
+
+# Rebuild native modules (better-sqlite3) for Electron's Node ABI.
+npmRebuild: true
+
+win:
+  target:
+    - nsis
+  icon: build/icon.png
+  artifactName: ${productName}-Setup-${version}.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: AI Pulse
+  runAfterFinish: true
+
+# Register the aipulse:// deep link so the web dashboard can open the app.
+protocols:
+  - name: AI Pulse
+    schemes:
+      - aipulse

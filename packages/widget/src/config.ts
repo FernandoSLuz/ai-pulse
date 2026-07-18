@@ -1,5 +1,6 @@
 import fs from "node:fs";
-import { configPath, dataDir } from "./paths";
+import path from "node:path";
+import { configPath, dataDir, serverBundleDir } from "./paths";
 
 /**
  * User configuration, stored in userData/config.json. This is the single source
@@ -85,10 +86,13 @@ export function saveConfig(config: AppConfig): void {
 
 /** Build the environment for the server child from config + inherited env. */
 export function serverEnv(config: AppConfig): NodeJS.ProcessEnv {
+  const bundleDir = serverBundleDir();
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     ELECTRON_RUN_AS_NODE: "1",
     AI_PULSE_DATA_DIR: dataDir(),
+    AI_PULSE_RESOURCE_DIR: bundleDir,
+    AI_PULSE_WEB_DIR: path.join(bundleDir, "web"),
     PORT: String(config.port),
   };
   // config.json keys win over any inherited env so the app's Settings are authoritative.

@@ -9,13 +9,19 @@ import path from "node:path";
  * web assets under resources/ (see electron-builder config).
  */
 
-/** Entry point of the background server process. */
+/**
+ * Directory holding the bundled server + its resources (config/, assets/, web/).
+ * The widget build produces this at dist/server for both dev and packaged runs,
+ * so the layout is identical whether we run from source or an installed app.
+ */
+export function serverBundleDir(): string {
+  // dist/src/paths.js -> dist/src -> dist -> dist/server
+  return path.join(__dirname, "..", "server");
+}
+
+/** Entry point of the background server process (esbuild ESM bundle). */
 export function serverEntry(): string {
-  if (app.isPackaged) {
-    return path.join(process.resourcesPath, "server", "dist", "index.js");
-  }
-  // dist/src/paths.js -> dist/src -> dist -> widget -> packages -> server/dist
-  return path.join(__dirname, "..", "..", "..", "server", "dist", "index.js");
+  return path.join(serverBundleDir(), "index.mjs");
 }
 
 /** Writable per-user data directory (SQLite DB, etc.). */
