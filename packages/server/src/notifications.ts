@@ -5,7 +5,10 @@ import { getNotificationPrefs, wasNotified, markNotified } from "./db.js";
 import type { ChangeEvent } from "./types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ICON_PATH = path.join(__dirname, "..", "assets", "notification-icon.png");
+// AI_PULSE_RESOURCE_DIR points at the server root (config/, assets/) in the
+// packaged app; falls back to the source layout when running from dist.
+const RESOURCE_DIR = process.env.AI_PULSE_RESOURCE_DIR ?? path.join(__dirname, "..");
+const ICON_PATH = path.join(RESOURCE_DIR, "assets", "notification-icon.png");
 
 export function sendNotification(title: string, message: string, eventType: ChangeEvent["type"], fingerprint?: string): void {
   const prefs = getNotificationPrefs();

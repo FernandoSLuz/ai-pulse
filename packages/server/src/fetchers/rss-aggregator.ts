@@ -63,7 +63,8 @@ interface SourcesConfig {
 }
 
 function loadFeeds(): FeedConfig[] {
-  const configPath = path.join(__dirname, "..", "..", "config", "sources.json");
+  const base = process.env.AI_PULSE_RESOURCE_DIR ?? path.join(__dirname, "..", "..");
+  const configPath = path.join(base, "config", "sources.json");
   try {
     const raw = JSON.parse(fs.readFileSync(configPath, "utf8")) as SourcesConfig;
     return raw.feeds ?? [];

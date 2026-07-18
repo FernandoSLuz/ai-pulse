@@ -68,7 +68,7 @@ const AA_POLL = Number(process.env.AA_POLL_INTERVAL_MS) || 7_200_000;
 const RSS_POLL = Number(process.env.RSS_POLL_INTERVAL_MS) || 1_200_000;
 const YT_POLL = Number(process.env.YT_POLL_INTERVAL_MS) || 1_800_000;
 
-const webRoot = path.join(__dirname, "..", "..", "web");
+const webRoot = process.env.AI_PULSE_WEB_DIR ?? path.join(__dirname, "..", "..", "web");
 const analystEnv = {
   geminiKey: GEMINI_KEY,
   groqKey: GROQ_KEY,
