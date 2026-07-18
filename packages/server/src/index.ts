@@ -40,7 +40,13 @@ import {
   addRoleGapToStack,
   dismissRoleGap,
 } from "./my-stack.js";
-import { generateBriefing, getCachedBriefing, curateAiPicksAllPeriods } from "./analyst/engine.js";
+import {
+  generateBriefing,
+  getCachedBriefing,
+  curateAiPicksAllPeriods,
+  getAnalystStatus,
+  getAnalystOutcome,
+} from "./analyst/engine.js";
 import { notifyFromEvent } from "./notifications.js";
 import { runChat } from "./chat/engine.js";
 import { listAvailableModels } from "./chat/models.js";
@@ -56,9 +62,8 @@ const AA_KEY = process.env.AA_API_KEY;
 const GROQ_KEY = process.env.GROQ_API_KEY;
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
 const TAVILY_KEY = process.env.TAVILY_API_KEY;
-const OLLAMA_ENABLED = process.env.OLLAMA_ENABLED === "true";
-const OLLAMA_URL = process.env.OLLAMA_URL ?? "http://localhost:11434";
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen2.5:7b";
+const CEREBRAS_KEY = process.env.CEREBRAS_API_KEY;
+const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
 const AA_POLL = Number(process.env.AA_POLL_INTERVAL_MS) || 7_200_000;
 const RSS_POLL = Number(process.env.RSS_POLL_INTERVAL_MS) || 1_200_000;
 const YT_POLL = Number(process.env.YT_POLL_INTERVAL_MS) || 1_800_000;
@@ -67,9 +72,8 @@ const webRoot = path.join(__dirname, "..", "..", "web");
 const analystEnv = {
   geminiKey: GEMINI_KEY,
   groqKey: GROQ_KEY,
-  ollamaEnabled: OLLAMA_ENABLED,
-  ollamaUrl: OLLAMA_URL,
-  ollamaModel: OLLAMA_MODEL,
+  cerebrasKey: CEREBRAS_KEY,
+  openrouterKey: OPENROUTER_KEY,
 };
 const chatEnv = {
   geminiKey: GEMINI_KEY,
@@ -109,11 +113,16 @@ wss.on("connection", (ws) => {
 
 app.get("/api/health", (_req, res) => {
   const health = evaluatePollHealth(AA_POLL);
+  const analyst = getAnalystStatus(analystEnv);
   res.json({
     ok: true,
     port: PORT,
     models: getAllModels().length,
     poll: health,
+    analyst: {
+      ...analyst,
+      lastOutcome: getAnalystOutcome(),
+    },
     newsUpdatedAt: getMeta("news_last_poll"),
     videosUpdatedAt: getMeta("videos_last_poll"),
   });
