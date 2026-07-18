@@ -2,9 +2,10 @@
   "name": "@ai-pulse/widget",
   "version": "1.0.0",
   "private": true,
+  "description": "AI Pulse desktop app — tray, server supervisor, settings, and the leaderboard widget.",
   "main": "dist/main.js",
   "scripts": {
-    "build": "tsc && node -e \"require('fs').cpSync('assets','dist/assets',{recursive:true})\"",
+    "build": "tsc && node -e \"const {cpSync}=require('fs');cpSync('assets','dist/assets',{recursive:true});cpSync('renderer','dist/renderer',{recursive:true})\"",
     "start": "electron dist/main.js",
     "dev": "npm run build && electron dist/main.js"
   },

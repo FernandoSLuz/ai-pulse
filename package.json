@@ -8,7 +8,7 @@
     "build": "npm run build -w @ai-pulse/server && npm run build -w @ai-pulse/widget",
     "dev": "npm run dev -w @ai-pulse/server",
     "start": "npm run start -w @ai-pulse/server",
-    "widget": "npm run start -w @ai-pulse/widget",
-    "setup": "npm run build && powershell -ExecutionPolicy Bypass -File scripts/install-startup.ps1"
+    "app": "npm run build && npm run start -w @ai-pulse/widget",
+    "widget": "npm run start -w @ai-pulse/widget"
   }
 }

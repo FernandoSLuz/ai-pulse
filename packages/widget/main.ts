@@ -1,21 +1,35 @@
 import { app, BrowserWindow, Tray, Menu, screen, nativeImage, shell, ipcMain } from "electron";
 import path from "node:path";
+import { ServerSupervisor, type ServerStatus } from "./src/supervisor";
+import {
+  loadConfig,
+  saveConfig,
+  redactedKeys,
+  LLM_KEY_NAMES,
+  type AppConfig,
+  type LlmKeyName,
+} from "./src/config";
+import { serverLogPath, settingsHtml, settingsPreload, leaderboardPreload } from "./src/paths";
 
-const PORT = process.env.PORT || 3847;
-const WIDGET_URL = `http://localhost:${PORT}/widget`;
 const WIDGET_WIDTH = 760;
 const TOP_MARGIN = 12;
-const WIDGET_ROWS = 25;
 const WIDGET_ROW_HEIGHT = 21;
-const WIDGET_CHROME = 260; // headline + stack strip + search + count + padding
+const WIDGET_CHROME = 260;
 const WIDGET_HEAD = 26;
-const MAX_WIDGET_HEIGHT =
-  WIDGET_CHROME + WIDGET_HEAD + WIDGET_ROWS * WIDGET_ROW_HEIGHT;
 
-let mainWindow: BrowserWindow | null = null;
+let settingsWindow: BrowserWindow | null = null;
+let leaderboardWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
-let dockSide: "right" | "left" = "right";
-let pinOnTop = false;
+let isQuitting = false;
+
+const supervisor = new ServerSupervisor();
+let config: AppConfig = loadConfig();
+
+const dashboardUrl = () => `http://localhost:${config.port}`;
+const leaderboardUrl = () => `http://localhost:${config.port}/widget`;
+const launchedHidden = process.argv.includes("--hidden");
+
+// --- Leaderboard (docked always-on-top widget) ------------------------------
 
 function workArea() {
   return screen.getPrimaryDisplay().workArea;
@@ -23,61 +37,104 @@ function workArea() {
 
 function maxWidgetHeight(): number {
   const area = workArea();
-  return Math.min(MAX_WIDGET_HEIGHT, area.height - TOP_MARGIN * 2);
+  const rows = config.leaderboard.rows;
+  const cap = WIDGET_CHROME + WIDGET_HEAD + rows * WIDGET_ROW_HEIGHT;
+  return Math.min(cap, area.height - TOP_MARGIN * 2);
 }
 
-function applyBounds(height: number): void {
-  if (!mainWindow) return;
+function applyLeaderboardBounds(height: number): void {
+  if (!leaderboardWindow) return;
   const area = workArea();
   const h = Math.min(Math.max(height, 200), maxWidgetHeight());
-  const x =
-    dockSide === "right"
-      ? area.x + area.width - WIDGET_WIDTH
-      : area.x;
-  mainWindow.setBounds({
-    x,
-    y: area.y + TOP_MARGIN,
-    width: WIDGET_WIDTH,
-    height: h,
-  });
+  const x = config.leaderboard.dockSide === "right" ? area.x + area.width - WIDGET_WIDTH : area.x;
+  leaderboardWindow.setBounds({ x, y: area.y + TOP_MARGIN, width: WIDGET_WIDTH, height: h });
 }
 
-function createWindow(): void {
-  mainWindow = new BrowserWindow({
+function createLeaderboardWindow(): void {
+  if (leaderboardWindow) {
+    leaderboardWindow.show();
+    return;
+  }
+  const area = workArea();
+  leaderboardWindow = new BrowserWindow({
     width: WIDGET_WIDTH,
     height: 400,
-    x: workArea().x + workArea().width - WIDGET_WIDTH,
-    y: workArea().y + TOP_MARGIN,
+    x: config.leaderboard.dockSide === "right" ? area.x + area.width - WIDGET_WIDTH : area.x,
+    y: area.y + TOP_MARGIN,
     frame: false,
     transparent: true,
-    alwaysOnTop: pinOnTop,
+    alwaysOnTop: config.leaderboard.pinOnTop,
     skipTaskbar: true,
     resizable: false,
     movable: true,
     hasShadow: true,
+    show: false,
     webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
+      preload: leaderboardPreload(),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
-
-  mainWindow.loadURL(WIDGET_URL);
-
-  mainWindow.on("closed", () => {
-    mainWindow = null;
+  leaderboardWindow.loadURL(leaderboardUrl());
+  leaderboardWindow.once("ready-to-show", () => leaderboardWindow?.show());
+  leaderboardWindow.on("closed", () => {
+    leaderboardWindow = null;
   });
 }
 
-function createTrayIcon(): Electron.NativeImage {
-  const candidates = [
-    path.join(__dirname, "assets", "tray-icon.png"),
-    path.join(__dirname, "..", "assets", "tray-icon.png"),
-  ];
-  for (const iconPath of candidates) {
-    const fromFile = nativeImage.createFromPath(iconPath);
-    if (!fromFile.isEmpty()) return fromFile.resize({ width: 16, height: 16 });
+function showLeaderboard(show: boolean): void {
+  config.leaderboard.show = show;
+  saveConfig(config);
+  if (show) {
+    createLeaderboardWindow();
+  } else {
+    leaderboardWindow?.close();
+    leaderboardWindow = null;
   }
+  refreshTrayMenu();
+}
+
+// --- Settings / control window (the "app view") -----------------------------
+
+function createSettingsWindow(): void {
+  if (settingsWindow) {
+    settingsWindow.show();
+    settingsWindow.focus();
+    return;
+  }
+  settingsWindow = new BrowserWindow({
+    width: 860,
+    height: 720,
+    minWidth: 640,
+    minHeight: 520,
+    title: "AI Pulse",
+    autoHideMenuBar: true,
+    show: false,
+    webPreferences: {
+      preload: settingsPreload(),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  settingsWindow.loadFile(settingsHtml());
+  settingsWindow.once("ready-to-show", () => settingsWindow?.show());
+  settingsWindow.on("close", (e) => {
+    if (!isQuitting) {
+      e.preventDefault(); // keep running in tray
+      settingsWindow?.hide();
+    }
+  });
+  settingsWindow.on("closed", () => {
+    settingsWindow = null;
+  });
+}
+
+// --- Tray -------------------------------------------------------------------
+
+function createTrayIcon(): Electron.NativeImage {
+  const iconPath = path.join(__dirname, "assets", "tray-icon.png");
+  const fromFile = nativeImage.createFromPath(iconPath);
+  if (!fromFile.isEmpty()) return fromFile.resize({ width: 16, height: 16 });
 
   const size = 16;
   const buf = Buffer.alloc(size * size * 4);
@@ -99,67 +156,205 @@ function createTrayIcon(): Electron.NativeImage {
 }
 
 function buildTrayMenu(): Menu {
+  const status = supervisor.getStatus();
+  const serviceLabel = status.userStopped
+    ? "Service: stopped"
+    : status.healthy
+      ? "Service: running ✓"
+      : status.running
+        ? "Service: starting…"
+        : "Service: restarting…";
+
   return Menu.buildFromTemplate([
+    { label: "AI Pulse", enabled: false },
+    { type: "separator" },
+    { label: "Open Settings", click: () => createSettingsWindow() },
     {
-      label: "Dock Right",
-      click: () => {
-        dockSide = "right";
-        mainWindow?.webContents.send("widget-reposition");
-      },
+      label: config.leaderboard.show ? "Hide Leaderboard" : "Show Leaderboard",
+      click: () => showLeaderboard(!config.leaderboard.show),
     },
-    {
-      label: "Dock Left",
-      click: () => {
-        dockSide = "left";
-        mainWindow?.webContents.send("widget-reposition");
-      },
-    },
-    {
-      label: pinOnTop ? "Unpin (allow overlay off)" : "Pin always on top",
-      click: () => {
-        pinOnTop = !pinOnTop;
-        mainWindow?.setAlwaysOnTop(pinOnTop, "floating");
-        tray?.setContextMenu(buildTrayMenu());
-      },
-    },
+    { label: "Open Dashboard in Browser", click: () => void shell.openExternal(dashboardUrl()) },
+    { type: "separator" },
+    { label: serviceLabel, enabled: false },
+    { label: "Restart Background Service", click: () => supervisor.restart() },
+    status.userStopped
+      ? { label: "Start Background Service", click: () => supervisor.start() }
+      : { label: "Stop Background Service", click: () => supervisor.stop() },
     { type: "separator" },
     {
-      label: "Open Dashboard",
-      click: () => shell.openExternal(`http://localhost:${PORT}`),
-    },
-    {
-      label: "Reload Widget",
-      click: () => mainWindow?.reload(),
+      label: "Start on login",
+      type: "checkbox",
+      checked: config.autoLaunch,
+      click: (item) => setAutoLaunch(item.checked),
     },
     { type: "separator" },
-    {
-      label: "Quit",
-      click: () => app.quit(),
-    },
+    { label: "Quit AI Pulse", click: () => void quitAll() },
   ]);
+}
+
+function refreshTrayMenu(): void {
+  tray?.setContextMenu(buildTrayMenu());
 }
 
 function createTray(): void {
   tray = new Tray(createTrayIcon());
-  tray.setToolTip("AI Pulse Widget");
-  tray.setContextMenu(buildTrayMenu());
+  tray.setToolTip("AI Pulse");
+  tray.on("double-click", () => createSettingsWindow());
+  refreshTrayMenu();
 }
 
-ipcMain.on("widget-resize", (_event, contentHeight: number) => {
-  applyBounds(contentHeight);
-});
+// --- Auto-launch ------------------------------------------------------------
 
-ipcMain.handle("widget-max-height", () => maxWidgetHeight());
+function setAutoLaunch(enabled: boolean): void {
+  config.autoLaunch = enabled;
+  saveConfig(config);
+  if (app.isPackaged) {
+    app.setLoginItemSettings({
+      openAtLogin: enabled,
+      args: config.startHidden ? ["--hidden"] : [],
+    });
+  }
+  refreshTrayMenu();
+  pushSettingsState();
+}
 
-app.whenReady().then(() => {
-  createWindow();
-  createTray();
-});
+// --- Quit-all ---------------------------------------------------------------
 
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
-});
+async function quitAll(): Promise<void> {
+  isQuitting = true;
+  refreshTrayMenu();
+  try {
+    await supervisor.shutdown();
+  } catch {
+    /* best effort */
+  }
+  leaderboardWindow?.destroy();
+  settingsWindow?.destroy();
+  tray?.destroy();
+  app.quit();
+}
 
-app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow();
-});
+// --- IPC (settings window <-> main) -----------------------------------------
+
+function settingsState() {
+  return {
+    config: {
+      port: config.port,
+      autoLaunch: config.autoLaunch,
+      startHidden: config.startHidden,
+      leaderboard: config.leaderboard,
+      keys: redactedKeys(config), // booleans only — never expose raw secrets
+    },
+    keyNames: LLM_KEY_NAMES,
+    service: supervisor.getStatus(),
+  };
+}
+
+function pushSettingsState(): void {
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    settingsWindow.webContents.send("settings:state", settingsState());
+  }
+}
+
+function registerIpc(): void {
+  ipcMain.handle("settings:getState", () => settingsState());
+
+  ipcMain.handle("settings:setKey", (_e, name: string, value: string) => {
+    if (!LLM_KEY_NAMES.includes(name as LlmKeyName)) return settingsState();
+    const trimmed = (value ?? "").trim();
+    if (trimmed) config.keys[name as LlmKeyName] = trimmed;
+    else delete config.keys[name as LlmKeyName];
+    saveConfig(config);
+    supervisor.restart(); // apply new key
+    return settingsState();
+  });
+
+  ipcMain.handle("settings:setPrefs", (_e, prefs: Partial<AppConfig>) => {
+    const portChanged = typeof prefs.port === "number" && prefs.port !== config.port;
+    if (typeof prefs.port === "number" && prefs.port >= 1 && prefs.port <= 65535) config.port = prefs.port;
+    if (typeof prefs.startHidden === "boolean") config.startHidden = prefs.startHidden;
+    if (prefs.leaderboard) {
+      config.leaderboard = { ...config.leaderboard, ...prefs.leaderboard };
+    }
+    saveConfig(config);
+    if (leaderboardWindow) applyLeaderboardBounds(leaderboardWindow.getBounds().height);
+    leaderboardWindow?.setAlwaysOnTop(config.leaderboard.pinOnTop, "floating");
+    if (typeof prefs.autoLaunch === "boolean") setAutoLaunch(prefs.autoLaunch);
+    if (portChanged) supervisor.restart();
+    refreshTrayMenu();
+    return settingsState();
+  });
+
+  ipcMain.handle("service:status", () => supervisor.getStatus());
+  ipcMain.handle("service:start", () => (supervisor.start(), supervisor.getStatus()));
+  ipcMain.handle("service:stop", () => (supervisor.stop(), supervisor.getStatus()));
+  ipcMain.handle("service:restart", () => (supervisor.restart(), supervisor.getStatus()));
+
+  ipcMain.handle("leaderboard:toggle", (_e, show: boolean) => {
+    showLeaderboard(show);
+    return settingsState();
+  });
+
+  ipcMain.handle("app:openDashboard", () => void shell.openExternal(dashboardUrl()));
+  ipcMain.handle("app:openLogs", () => void shell.openPath(serverLogPath()));
+
+  // Proxy the server health JSON so the renderer avoids cross-origin fetches.
+  ipcMain.handle("server:health", async () => {
+    try {
+      const res = await fetch(`http://127.0.0.1:${config.port}/api/health`, {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) return { ok: false };
+      return await res.json();
+    } catch {
+      return { ok: false };
+    }
+  });
+
+  // Leaderboard renderer (unchanged contract).
+  ipcMain.on("widget-resize", (_e, contentHeight: number) => applyLeaderboardBounds(contentHeight));
+  ipcMain.handle("widget-max-height", () => maxWidgetHeight());
+}
+
+// --- Lifecycle --------------------------------------------------------------
+
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => createSettingsWindow());
+
+  app.whenReady().then(() => {
+    if (process.platform === "win32") app.setAppUserModelId("com.aipulse.desktop");
+    registerIpc();
+
+    supervisor.on("status", (status: ServerStatus) => {
+      refreshTrayMenu();
+      pushSettingsState();
+      if (status.healthy && config.leaderboard.show && !leaderboardWindow) {
+        createLeaderboardWindow();
+      }
+    });
+
+    createTray();
+    supervisor.start();
+
+    // Apply auto-launch registration to match saved config on every start.
+    if (app.isPackaged) {
+      app.setLoginItemSettings({
+        openAtLogin: config.autoLaunch,
+        args: config.startHidden ? ["--hidden"] : [],
+      });
+    }
+
+    if (!launchedHidden) createSettingsWindow();
+  });
+
+  app.on("window-all-closed", () => {
+    // Intentionally do nothing — the app lives in the tray until "Quit AI Pulse".
+  });
+
+  app.on("before-quit", () => {
+    isQuitting = true;
+  });
+}

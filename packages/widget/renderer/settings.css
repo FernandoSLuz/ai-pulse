@@ -1,0 +1,102 @@
+:root {
+  --bg: #0e1117;
+  --card: #161b24;
+  --card-2: #1c2330;
+  --border: #262d3a;
+  --text: #e6ebf2;
+  --muted: #8b95a7;
+  --accent: #5b9fd4;
+  --ok: #46c977;
+  --warn: #e0a545;
+  --err: #e05a5a;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.5 "Segoe UI", system-ui, sans-serif;
+}
+
+body { display: flex; flex-direction: column; }
+
+/* Top bar */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px; border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, #131925, #0e1117);
+}
+.brand { display: flex; align-items: center; gap: 12px; }
+.logo { color: var(--accent); font-size: 22px; }
+.brand-title { font-weight: 600; font-size: 15px; }
+.brand-sub { color: var(--muted); font-size: 11px; }
+.status-pills { display: flex; gap: 8px; }
+
+.pill {
+  padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 600;
+  border: 1px solid var(--border); white-space: nowrap;
+}
+.pill-ok { color: var(--ok); border-color: rgba(70,201,119,.4); background: rgba(70,201,119,.08); }
+.pill-warn { color: var(--warn); border-color: rgba(224,165,69,.4); background: rgba(224,165,69,.08); }
+.pill-err { color: var(--err); border-color: rgba(224,90,90,.4); background: rgba(224,90,90,.08); }
+.pill-muted { color: var(--muted); }
+
+/* Content */
+.content { flex: 1; overflow-y: auto; padding: 18px 20px; display: flex; flex-direction: column; gap: 16px; }
+
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; }
+.card-head h2 { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
+.card-head .muted { margin: 0 0 10px; }
+.muted { color: var(--muted); }
+.small { font-size: 11px; }
+
+.row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid var(--border); }
+.row:first-of-type { border-top: none; }
+.row-label { min-width: 90px; color: var(--muted); }
+.row-val { min-width: 26px; text-align: right; }
+
+/* Keys */
+.keys { display: flex; flex-direction: column; gap: 8px; }
+.key-row { display: grid; grid-template-columns: 170px 1fr auto; align-items: center; gap: 10px; }
+.key-name { font-weight: 600; }
+.key-hint { font-size: 10px; color: var(--muted); }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
+.dot.on { background: var(--ok); }
+.dot.off { background: #39414f; }
+.dot.cool { background: var(--warn); }
+
+input[type="text"], input[type="password"], input[type="number"] {
+  background: var(--card-2); border: 1px solid var(--border); color: var(--text);
+  border-radius: 8px; padding: 7px 10px; font: inherit; width: 100%;
+}
+input.num { width: 90px; }
+input[type="range"] { flex: 1; accent-color: var(--accent); }
+
+.btn {
+  background: var(--accent); color: #06131f; border: none; border-radius: 8px;
+  padding: 8px 14px; font: inherit; font-weight: 600; cursor: pointer;
+}
+.btn:hover { filter: brightness(1.08); }
+.btn-small { padding: 6px 12px; }
+.btn-ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
+.btn-group { display: flex; gap: 8px; margin-left: auto; }
+
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.seg button { background: var(--card-2); color: var(--muted); border: none; padding: 6px 16px; cursor: pointer; font: inherit; }
+.seg button.active { background: var(--accent); color: #06131f; font-weight: 600; }
+
+.switch { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+.switch input { width: 16px; height: 16px; accent-color: var(--accent); }
+
+.service-row { justify-content: space-between; }
+
+.providers { display: flex; flex-direction: column; gap: 6px; }
+.prov { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: var(--card-2); border-radius: 8px; }
+.prov .label { flex: 1; }
+.prov .state { font-size: 11px; color: var(--muted); }
+
+.footer { display: flex; gap: 10px; padding: 12px 20px; border-top: 1px solid var(--border); }
+.hidden { display: none !important; }
