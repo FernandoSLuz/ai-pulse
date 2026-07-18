@@ -1,8 +1,11 @@
 import type { ModelRecord } from "../types.js";
 
+// The /free endpoint is what free-tier keys can actually read; the others are
+// plan-gated and return 401/403 for free keys (expected, not an error). Try the
+// reachable one first so a healthy poll doesn't emit scary 403 warnings.
 const AA_ENDPOINTS = [
-  "https://artificialanalysis.ai/api/v2/language/models",
   "https://artificialanalysis.ai/api/v2/language/models/free",
+  "https://artificialanalysis.ai/api/v2/language/models",
   "https://artificialanalysis.ai/api/v2/data/llms/models",
 ];
 
@@ -104,7 +107,13 @@ export async function fetchArtificialAnalysisModels(apiKey?: string): Promise<Mo
         headers: { "x-api-key": apiKey, Accept: "application/json" },
       });
       if (!res.ok) {
-        console.warn(`[AA] ${endpoint} returned ${res.status}`);
+        // 401/403 just means this endpoint isn't on the free plan — expected,
+        // log at debug level so it doesn't look like a failure.
+        if (res.status === 401 || res.status === 403) {
+          console.debug(`[AA] ${endpoint} not available on this plan (${res.status}) — trying next`);
+        } else {
+          console.warn(`[AA] ${endpoint} returned ${res.status}`);
+        }
         continue;
       }
       const json = (await res.json()) as { data?: AaRawModel[] };

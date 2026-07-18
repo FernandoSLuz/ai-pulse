@@ -149,7 +149,7 @@ export interface AnalystBriefing {
   yourStack: string;
   upgradeSuggestion: string | null;
   upgradeSlug: string | null;
-  analystSource: "gemini" | "groq" | "ollama" | "rules";
+  analystSource: "gemini" | "groq" | "cerebras" | "openrouter" | "ollama" | "rules";
   createdAt: string;
 }
 

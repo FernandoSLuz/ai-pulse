@@ -1,5 +1,3 @@
-import Groq from "groq-sdk";
-import { GoogleGenAI } from "@google/genai";
 import {
   buildAnalystPrompt,
   buildRulesBriefing,
@@ -7,6 +5,7 @@ import {
   buildBatchedAiPickPrompt,
   buildRulesAiPicks,
 } from "./prompts.js";
+import { routeLlmJson, getAnalystStatus, type AnalystEnv, type LlmResult } from "./llm-router.js";
 import { findUpgradeCandidates } from "../my-stack.js";
 import {
   getLatestBriefing,
@@ -15,18 +14,13 @@ import {
   getNews,
   clearAiPicksForPeriod,
   setAiPicks,
+  setMeta,
+  getMeta,
 } from "../db.js";
 import type { AnalystBriefing, ChangeEvent, ModelRecord, NewsItem, NewsPeriod } from "../types.js";
 
-export type AnalystLlmSource = "gemini" | "ollama" | "groq";
-
-export interface AnalystEnv {
-  geminiKey?: string;
-  groqKey?: string;
-  ollamaEnabled?: boolean;
-  ollamaUrl?: string;
-  ollamaModel?: string;
-}
+export type { AnalystEnv } from "./llm-router.js";
+export { getAnalystStatus } from "./llm-router.js";
 
 interface BriefingContext {
   newModelSlugs: string[];
@@ -35,197 +29,35 @@ interface BriefingContext {
   models: ModelRecord[];
 }
 
-/** Skip Groq until this time after a daily/rate-limit 429. */
-let groqCooldownUntil = 0;
-
-function groqAvailable(): boolean {
-  return Date.now() >= groqCooldownUntil;
-}
-
-function noteGroqRateLimit(err: unknown): void {
-  const message = (err as Error)?.message ?? String(err);
-  if (!/429|rate.?limit|tokens per day|TPD/i.test(message)) return;
-
-  const retryMatch = message.match(/try again in\s+(\d+)m([\d.]+)?s/i);
-  let waitMs = 45 * 60_000;
-  if (retryMatch) {
-    const mins = Number(retryMatch[1]) || 0;
-    const secs = Number(retryMatch[2]) || 0;
-    waitMs = Math.min((mins * 60 + secs) * 1000 + 30_000, 6 * 60 * 60_000);
-  }
-  groqCooldownUntil = Date.now() + waitMs;
-  console.warn(
-    `[Analyst] Groq rate-limited — skipping Groq for ~${Math.ceil(waitMs / 60_000)}m (using Gemini/Ollama/rules)`,
-  );
-}
-
-function extractJsonObject(text: string): Record<string, unknown> | null {
-  const trimmed = text.trim();
-  try {
-    return JSON.parse(trimmed) as Record<string, unknown>;
-  } catch {
-    const match = trimmed.match(/\{[\s\S]*\}/);
-    if (!match) return null;
-    try {
-      return JSON.parse(match[0]) as Record<string, unknown>;
-    } catch {
-      return null;
-    }
-  }
-}
-
-/** Skip Gemini until this time after a free-tier 429. */
-let geminiCooldownUntil = 0;
-
-function geminiAvailable(): boolean {
-  return Date.now() >= geminiCooldownUntil;
-}
-
-function noteGeminiRateLimit(err: unknown): void {
-  const message = (err as Error)?.message ?? String(err);
-  if (!/429|RESOURCE_EXHAUSTED|quota|rate.?limit/i.test(message)) return;
-
-  const retryMatch = message.match(/retry in\s+([\d.]+)s/i);
-  const waitMs = retryMatch
-    ? Math.min((Number(retryMatch[1]) + 5) * 1000, 60 * 60_000)
-    : 60_000;
-  geminiCooldownUntil = Math.max(geminiCooldownUntil, Date.now() + waitMs);
-  console.warn(
-    `[Analyst] Gemini rate-limited — skipping Gemini for ~${Math.ceil(waitMs / 1000)}s (using Ollama/Groq/rules)`,
-  );
-}
-
-const LLM_TIMEOUT_MS = 45_000;
-
-async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<T>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-
-async function callGemini(prompt: string, apiKey: string): Promise<Record<string, unknown> | null> {
-  if (!geminiAvailable()) return null;
-
-  // Stick to the same free model chat uses — older flash variants often have limit: 0 for new keys.
-  const model = "gemini-3.5-flash";
-  const ai = new GoogleGenAI({ apiKey });
-
-  try {
-    const response = await withTimeout(
-      ai.models.generateContent({
-        model,
-        contents: prompt,
-        config: {
-          temperature: 0.3,
-          responseMimeType: "application/json",
-          abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
-        },
-      }),
-      LLM_TIMEOUT_MS + 2_000,
-      `Gemini ${model}`,
-    );
-    const text = response.text;
-    if (!text) return null;
-    return extractJsonObject(text);
-  } catch (err) {
-    noteGeminiRateLimit(err);
-    console.warn("[Analyst] Gemini failed:", (err as Error).message);
-    return null;
-  }
-}
-
-async function callGroq(prompt: string, apiKey: string): Promise<Record<string, unknown> | null> {
-  if (!groqAvailable()) return null;
-  try {
-    const groq = new Groq({ apiKey });
-    const completion = await withTimeout(
-      groq.chat.completions.create({
-        model: "llama-3.1-8b-instant",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.3,
-        response_format: { type: "json_object" },
-      }),
-      LLM_TIMEOUT_MS,
-      "Groq",
-    );
-    const text = completion.choices[0]?.message?.content;
-    if (!text) return null;
-    return JSON.parse(text) as Record<string, unknown>;
-  } catch (err) {
-    noteGroqRateLimit(err);
-    if (groqCooldownUntil > Date.now()) return null;
-    console.warn("[Analyst] Groq failed:", (err as Error).message);
-    return null;
-  }
-}
-
-async function isOllamaHealthy(url: string): Promise<boolean> {
-  try {
-    const res = await fetch(`${url}/api/tags`, {
-      signal: AbortSignal.timeout(2000),
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-async function callOllama(prompt: string, url: string, model: string): Promise<Record<string, unknown> | null> {
-  try {
-    const res = await fetch(`${url}/api/generate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model, prompt, stream: false, format: "json" }),
-      signal: AbortSignal.timeout(60000),
-    });
-    if (!res.ok) {
-      console.warn("[Analyst] Ollama generate returned", res.status);
-      return null;
-    }
-    const json = (await res.json()) as { response?: string };
-    if (!json.response) return null;
-    return extractJsonObject(json.response);
-  } catch (err) {
-    console.warn("[Analyst] Ollama generate failed:", (err as Error).message);
-    return null;
-  }
+export interface AnalystOutcome {
+  source: AnalystBriefing["analystSource"];
+  model: string | null;
+  degraded: boolean;
+  at: string;
 }
 
 /**
- * Prefer Gemini (generous free tier) → local Ollama → Groq (with cooldown after 429).
- * Avoids burning Groq's tiny daily token budget on every poll.
+ * Record which provider (if any) served the last curation so the UI can show
+ * whether AI curation is healthy or degraded to deterministic rules.
  */
-async function callLlmJson(
-  prompt: string,
-  env: AnalystEnv,
-): Promise<{ data: Record<string, unknown>; source: AnalystLlmSource } | null> {
-  if (env.geminiKey) {
-    const parsed = await callGemini(prompt, env.geminiKey);
-    if (parsed) return { data: parsed, source: "gemini" };
-  }
+function recordOutcome(result: LlmResult | null): void {
+  const outcome: AnalystOutcome = {
+    source: result?.provider ?? "rules",
+    model: result?.model ?? null,
+    degraded: result === null,
+    at: new Date().toISOString(),
+  };
+  setMeta("analyst_last_outcome", JSON.stringify(outcome));
+}
 
-  if (env.ollamaEnabled && env.ollamaUrl) {
-    const healthy = await isOllamaHealthy(env.ollamaUrl);
-    if (healthy) {
-      const parsed = await callOllama(prompt, env.ollamaUrl, env.ollamaModel ?? "qwen2.5:7b");
-      if (parsed) return { data: parsed, source: "ollama" };
-    }
+export function getAnalystOutcome(): AnalystOutcome | null {
+  const raw = getMeta("analyst_last_outcome");
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as AnalystOutcome;
+  } catch {
+    return null;
   }
-
-  if (env.groqKey) {
-    const parsed = await callGroq(prompt, env.groqKey);
-    if (parsed) return { data: parsed, source: "groq" };
-  }
-
-  return null;
 }
 
 export async function generateBriefing(
@@ -251,7 +83,8 @@ export async function generateBriefing(
     upgradeCandidates,
   };
 
-  const llm = await callLlmJson(buildAnalystPrompt(promptContext), env);
+  const llm = await routeLlmJson(buildAnalystPrompt(promptContext), env);
+  recordOutcome(llm);
   const rules = buildRulesBriefing(promptContext);
   const data = llm?.data ?? rules;
 
@@ -263,7 +96,7 @@ export async function generateBriefing(
     yourStack: String(data.yourStack ?? rules.yourStack),
     upgradeSuggestion: data.upgradeSuggestion ? String(data.upgradeSuggestion) : rules.upgradeSuggestion,
     upgradeSlug: data.upgradeSlug ? String(data.upgradeSlug) : rules.upgradeSlug,
-    analystSource: llm?.source ?? "rules",
+    analystSource: llm?.provider ?? "rules",
     createdAt: new Date().toISOString(),
   });
 }
@@ -302,7 +135,8 @@ export async function curateAiPicks(period: NewsPeriod, env: AnalystEnv): Promis
     })),
   );
 
-  const llm = await callLlmJson(prompt, env);
+  const llm = await routeLlmJson(prompt, env);
+  recordOutcome(llm);
   const idSet = new Set(candidates.map((c) => c.id));
   const picks = normalizePicks(llm?.data?.picks, idSet, candidates);
 
@@ -331,7 +165,8 @@ export async function curateAiPicksAllPeriods(
     }));
   }
 
-  const llm = await callLlmJson(buildBatchedAiPickPrompt(candidateMap), env);
+  const llm = await routeLlmJson(buildBatchedAiPickPrompt(candidateMap), env);
+  recordOutcome(llm);
   const picksRoot = (llm?.data?.periods as Record<string, { picks?: unknown }>) ?? {};
 
   for (const period of periods) {
