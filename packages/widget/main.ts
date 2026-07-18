@@ -10,6 +10,7 @@ import {
   type LlmKeyName,
 } from "./src/config";
 import { serverLogPath, settingsHtml, settingsPreload, leaderboardPreload } from "./src/paths";
+import { Updater } from "./src/updater";
 
 const WIDGET_WIDTH = 760;
 const TOP_MARGIN = 12;
@@ -23,6 +24,7 @@ let tray: Tray | null = null;
 let isQuitting = false;
 
 const supervisor = new ServerSupervisor();
+const updater = new Updater();
 let config: AppConfig = loadConfig();
 
 const dashboardUrl = () => `http://localhost:${config.port}`;
@@ -174,6 +176,19 @@ function buildTrayMenu(): Menu {
       click: () => showLeaderboard(!config.leaderboard.show),
     },
     { label: "Open Dashboard in Browser", click: () => void shell.openExternal(dashboardUrl()) },
+    {
+      label:
+        updater.state.status === "available"
+          ? `Update available: v${updater.state.availableVersion}`
+          : updater.state.status === "downloaded"
+            ? "Restart to install update"
+            : "Check for updates",
+      click: () => {
+        if (updater.state.status === "downloaded") updater.install();
+        else updater.check();
+        createSettingsWindow();
+      },
+    },
     { type: "separator" },
     { label: serviceLabel, enabled: false },
     { label: "Restart Background Service", click: () => supervisor.restart() },
@@ -247,6 +262,7 @@ function settingsState() {
     },
     keyNames: LLM_KEY_NAMES,
     service: supervisor.getStatus(),
+    update: updater.state,
   };
 }
 
@@ -306,6 +322,11 @@ function registerIpc(): void {
     showLeaderboard(show);
     return settingsState();
   });
+
+  ipcMain.handle("update:check", () => (updater.check(), updater.state));
+  ipcMain.handle("update:download", () => (updater.download(), updater.state));
+  ipcMain.handle("update:install", () => updater.install());
+  ipcMain.handle("update:status", () => updater.state);
 
   ipcMain.handle("app:openDashboard", () => void shell.openExternal(dashboardUrl()));
   ipcMain.handle("app:openLogs", () => void shell.openPath(serverLogPath()));
@@ -406,6 +427,12 @@ if (!gotLock) {
         createLeaderboardWindow();
       }
     });
+
+    updater.on("state", () => {
+      refreshTrayMenu();
+      pushSettingsState();
+    });
+    updater.init();
 
     createTray();
     supervisor.start();

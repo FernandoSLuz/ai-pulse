@@ -16,6 +16,9 @@ contextBridge.exposeInMainWorld("aiPulse", {
   serverHealth: () => ipcRenderer.invoke("server:health"),
   apiGet: (path: string) => ipcRenderer.invoke("api:get", path),
   apiPut: (path: string, body: unknown) => ipcRenderer.invoke("api:put", path, body),
+  updateCheck: () => ipcRenderer.invoke("update:check"),
+  updateDownload: () => ipcRenderer.invoke("update:download"),
+  updateInstall: () => ipcRenderer.invoke("update:install"),
   onState: (cb: (state: unknown) => void) => {
     ipcRenderer.on("settings:state", (_e, state) => cb(state));
   },
