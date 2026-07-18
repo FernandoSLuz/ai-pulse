@@ -84,6 +84,54 @@
       </div>
     </section>
 
+    <!-- Preferences (My Stack) -->
+    <section class="card">
+      <div class="card-head"><h2>Preferences</h2>
+        <p class="muted">Your current model and priorities. Curation and upgrade suggestions are tuned to these —
+          this is the same "My Stack" that used to live on the web dashboard.</p></div>
+      <div class="row">
+        <span class="row-label">Primary model</span>
+        <input type="text" id="pref-model" list="pref-model-list" placeholder="Search models…" />
+        <datalist id="pref-model-list"></datalist>
+      </div>
+      <div class="row">
+        <span class="row-label">Provider</span>
+        <input type="text" id="pref-provider" placeholder="Cursor, API, OpenRouter…" />
+      </div>
+      <div class="row">
+        <span class="row-label">Budget</span>
+        <select id="pref-budget" class="num" style="width:auto">
+          <option value="free">Free</option>
+          <option value="mid">Mid</option>
+          <option value="premium">Premium</option>
+          <option value="unlimited">Unlimited</option>
+        </select>
+      </div>
+      <div class="prio">
+        <div class="prio-row"><span>Coding</span><input type="range" id="prio-coding" min="0" max="100" /><b id="prio-coding-v">0</b></div>
+        <div class="prio-row"><span>Reasoning</span><input type="range" id="prio-reasoning" min="0" max="100" /><b id="prio-reasoning-v">0</b></div>
+        <div class="prio-row"><span>Speed</span><input type="range" id="prio-speed" min="0" max="100" /><b id="prio-speed-v">0</b></div>
+        <div class="prio-row"><span>Cost</span><input type="range" id="prio-cost" min="0" max="100" /><b id="prio-cost-v">0</b></div>
+      </div>
+      <div class="row">
+        <span class="row-label">Notes</span>
+        <input type="text" id="pref-notes" placeholder="Anything the analyst should know…" />
+      </div>
+      <div class="row" style="justify-content:flex-end">
+        <span id="pref-status" class="muted small"></span>
+        <button id="pref-save" class="btn btn-small">Save preferences</button>
+      </div>
+    </section>
+
+    <!-- Notifications -->
+    <section class="card">
+      <div class="card-head"><h2>Notifications</h2>
+        <p class="muted">Windows toasts for what matters.</p></div>
+      <div class="row"><label class="switch"><input type="checkbox" id="notif-news" /><span>Breaking news</span></label></div>
+      <div class="row"><label class="switch"><input type="checkbox" id="notif-rankings" /><span>New models &amp; leader changes</span></label></div>
+      <div class="row"><label class="switch"><input type="checkbox" id="notif-upgrades" /><span>Upgrade suggestions for your stack</span></label></div>
+    </section>
+
     <!-- AI provider health -->
     <section class="card">
       <div class="card-head"><h2>AI curation health</h2>

@@ -271,7 +271,7 @@ function renderBriefing() {
     ${upgradeHtml}
   `;
 
-  document.getElementById("open-stack-from-briefing")?.addEventListener("click", openDrawer);
+  document.getElementById("open-stack-from-briefing")?.addEventListener("click", promptOpenApp);
   document.getElementById("briefing-apply")?.addEventListener("click", async () => {
     await fetchJson("/api/stack/apply-suggestion", { method: "POST" });
     if (state.briefing) {
@@ -787,7 +787,43 @@ function closeDrawer() {
   document.getElementById("stack-drawer").classList.add("hidden");
 }
 
-document.getElementById("open-stack").addEventListener("click", openDrawer);
+// Settings & preferences now live in the AI Pulse desktop app. The gear tries to
+// open the app via its custom protocol, with an in-browser fallback if it isn't
+// installed / registered yet.
+function promptOpenApp() {
+  try {
+    window.location.href = "aipulse://settings";
+  } catch {
+    /* protocol not registered */
+  }
+  showAppRedirectToast();
+}
+
+function showAppRedirectToast() {
+  const existing = document.getElementById("app-redirect-toast");
+  if (existing) {
+    existing.classList.remove("hidden");
+    return;
+  }
+  const toast = document.createElement("div");
+  toast.id = "app-redirect-toast";
+  toast.className = "app-toast";
+  toast.innerHTML =
+    '<div class="app-toast-body"><strong>Opening the AI Pulse app…</strong>' +
+    "<span>Settings &amp; preferences live in the app now. If nothing opens, launch " +
+    "<b>AI Pulse</b> from your system tray.</span></div>" +
+    '<div class="app-toast-actions">' +
+    '<button type="button" id="app-toast-fallback" class="btn btn-ghost btn-sm">Edit here instead</button>' +
+    '<button type="button" id="app-toast-close" class="btn btn-ghost btn-sm">Dismiss</button></div>';
+  document.body.appendChild(toast);
+  document.getElementById("app-toast-close").addEventListener("click", () => toast.remove());
+  document.getElementById("app-toast-fallback").addEventListener("click", () => {
+    toast.remove();
+    openDrawer();
+  });
+}
+
+document.getElementById("open-stack").addEventListener("click", promptOpenApp);
 document.getElementById("close-stack").addEventListener("click", closeDrawer);
 document.querySelector(".drawer-backdrop").addEventListener("click", closeDrawer);
 

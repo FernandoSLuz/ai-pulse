@@ -138,6 +138,9 @@ async function refreshProviders() {
     return;
   }
 
+  // Server is up — load preferences if the initial attempt raced the boot.
+  if (!stackProfile) loadPreferences();
+
   const a = health.analyst;
   const outcome = a.lastOutcome;
   if (a.configuredCount === 0) {
@@ -178,6 +181,116 @@ async function refreshProviders() {
   if (box.childElementCount === 0) {
     box.innerHTML = '<div class="muted small">No AI provider configured — add a key above.</div>';
   }
+}
+
+// --- Preferences (My Stack + notifications) ---------------------------------
+
+let stackProfile = null;
+let modelList = [];
+
+async function loadPreferences() {
+  const [stack, models, prefs] = await Promise.all([
+    api.apiGet("/api/stack"),
+    api.apiGet("/api/models"),
+    api.apiGet("/api/notifications/prefs"),
+  ]);
+  if (stack && !stack.error) stackProfile = stack;
+  if (Array.isArray(models)) modelList = models;
+  if (prefs && !prefs.error) {
+    el("notif-news").checked = Boolean(prefs.news);
+    el("notif-rankings").checked = Boolean(prefs.rankings);
+    el("notif-upgrades").checked = Boolean(prefs.upgrades);
+  }
+  renderPreferences();
+}
+
+function setPrio(name, val) {
+  const v = Number(val) || 0;
+  el("prio-" + name).value = v;
+  el("prio-" + name + "-v").textContent = v;
+}
+
+function renderPreferences() {
+  if (!stackProfile) return;
+  const dl = el("pref-model-list");
+  dl.innerHTML = "";
+  for (const m of modelList) {
+    const opt = document.createElement("option");
+    opt.value = m.name;
+    dl.appendChild(opt);
+  }
+  el("pref-model").value = stackProfile.primaryModelName || "";
+  el("pref-provider").value = stackProfile.provider || "";
+  el("pref-budget").value = stackProfile.budgetTier || "mid";
+  el("pref-notes").value = stackProfile.notes || "";
+  setPrio("coding", stackProfile.priorityCoding);
+  setPrio("reasoning", stackProfile.priorityReasoning);
+  setPrio("speed", stackProfile.prioritySpeed);
+  setPrio("cost", stackProfile.priorityCost);
+}
+
+async function savePreferences() {
+  const btn = el("pref-save");
+  const status = el("pref-status");
+  btn.disabled = true;
+  status.textContent = "Saving…";
+
+  const name = el("pref-model").value.trim();
+  const match = modelList.find((m) => m.name.toLowerCase() === name.toLowerCase());
+  const slug = match ? match.slug : stackProfile?.primaryModelSlug || "";
+  const provider = el("pref-provider").value.trim() || "Cursor";
+
+  // Non-destructively update (or create) the primary entry, keeping any others.
+  const entries = Array.isArray(stackProfile?.entries) ? stackProfile.entries.map((e) => ({ ...e })) : [];
+  let primary = entries.find((e) => e.role === "primary");
+  if (!primary) {
+    primary = { id: "e_primary", role: "primary", areas: ["coding"], providers: [provider], modelSlug: slug, modelName: match ? match.name : name };
+    entries.unshift(primary);
+  } else {
+    primary.modelSlug = slug;
+    primary.modelName = match ? match.name : name;
+    primary.providers = [provider];
+  }
+
+  const body = {
+    entries,
+    priorityCoding: Number(el("prio-coding").value),
+    priorityReasoning: Number(el("prio-reasoning").value),
+    prioritySpeed: Number(el("prio-speed").value),
+    priorityCost: Number(el("prio-cost").value),
+    budgetTier: el("pref-budget").value,
+    notes: el("pref-notes").value.trim(),
+  };
+  const res = await api.apiPut("/api/stack", body);
+  if (res && !res.error) {
+    stackProfile = res;
+    renderPreferences();
+    status.textContent = "Saved ✓";
+  } else {
+    status.textContent = "Save failed — is the service running?";
+  }
+  btn.disabled = false;
+  setTimeout(() => (status.textContent = ""), 2500);
+}
+
+async function saveNotifs() {
+  await api.apiPut("/api/notifications/prefs", {
+    news: el("notif-news").checked,
+    rankings: el("notif-rankings").checked,
+    upgrades: el("notif-upgrades").checked,
+  });
+}
+
+function wirePreferences() {
+  for (const name of ["coding", "reasoning", "speed", "cost"]) {
+    el("prio-" + name).addEventListener("input", (e) => {
+      el("prio-" + name + "-v").textContent = e.target.value;
+    });
+  }
+  el("pref-save").addEventListener("click", savePreferences);
+  el("notif-news").addEventListener("change", saveNotifs);
+  el("notif-rankings").addEventListener("change", saveNotifs);
+  el("notif-upgrades").addEventListener("change", saveNotifs);
 }
 
 // --- Wiring -----------------------------------------------------------------
@@ -243,12 +356,14 @@ function wireControls() {
 async function init() {
   state = await api.getState();
   wireControls();
+  wirePreferences();
   applyState();
   api.onState((s) => {
     state = s;
     renderPills();
     renderStartup();
   });
+  loadPreferences();
   refreshProviders();
   setInterval(refreshProviders, 5000);
 }

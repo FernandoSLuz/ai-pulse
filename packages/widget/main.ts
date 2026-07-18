@@ -311,6 +311,36 @@ function registerIpc(): void {
     }
   });
 
+  // Guarded proxy to the local server API so the settings renderer can read/write
+  // preferences (stack, notifications, models) without cross-origin fetches.
+  const apiUrl = (p: string) => `http://127.0.0.1:${config.port}${p}`;
+  const allowed = (p: string) => typeof p === "string" && p.startsWith("/api/");
+
+  ipcMain.handle("api:get", async (_e, p: string) => {
+    if (!allowed(p)) return { error: "forbidden" };
+    try {
+      const res = await fetch(apiUrl(p), { signal: AbortSignal.timeout(8000) });
+      return await res.json();
+    } catch (err) {
+      return { error: (err as Error).message };
+    }
+  });
+
+  ipcMain.handle("api:put", async (_e, p: string, body: unknown) => {
+    if (!allowed(p)) return { error: "forbidden" };
+    try {
+      const res = await fetch(apiUrl(p), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body ?? {}),
+        signal: AbortSignal.timeout(8000),
+      });
+      return await res.json();
+    } catch (err) {
+      return { error: (err as Error).message };
+    }
+  });
+
   // Leaderboard renderer (unchanged contract).
   ipcMain.on("widget-resize", (_e, contentHeight: number) => applyLeaderboardBounds(contentHeight));
   ipcMain.handle("widget-max-height", () => maxWidgetHeight());
@@ -318,14 +348,39 @@ function registerIpc(): void {
 
 // --- Lifecycle --------------------------------------------------------------
 
+/** Open the settings window when launched via an aipulse:// deep link. */
+function handleProtocolArgv(argv: string[]): void {
+  const link = argv.find((a) => a.startsWith("aipulse://"));
+  if (link) createSettingsWindow();
+}
+
+function registerProtocol(): void {
+  if (app.isPackaged) {
+    app.setAsDefaultProtocolClient("aipulse");
+  } else if (process.platform === "win32" && process.argv.length >= 2) {
+    // Dev: register with the explicit electron + script path so the browser
+    // dashboard's aipulse:// link can reach this instance.
+    app.setAsDefaultProtocolClient("aipulse", process.execPath, [path.resolve(process.argv[1])]);
+  }
+}
+
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
-  app.on("second-instance", () => createSettingsWindow());
+  app.on("second-instance", (_e, argv) => {
+    handleProtocolArgv(argv);
+    createSettingsWindow();
+  });
+
+  // macOS deep-link delivery (Windows/Linux arrive via argv/second-instance).
+  app.on("open-url", (_e, url) => {
+    if (url.startsWith("aipulse://")) createSettingsWindow();
+  });
 
   app.whenReady().then(() => {
     if (process.platform === "win32") app.setAppUserModelId("com.aipulse.desktop");
+    registerProtocol();
     registerIpc();
 
     supervisor.on("status", (status: ServerStatus) => {
@@ -348,6 +403,7 @@ if (!gotLock) {
     }
 
     if (!launchedHidden) createSettingsWindow();
+    handleProtocolArgv(process.argv); // cold-start deep link
   });
 
   app.on("window-all-closed", () => {

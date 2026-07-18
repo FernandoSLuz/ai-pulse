@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld("aiPulse", {
   openDashboard: () => ipcRenderer.invoke("app:openDashboard"),
   openLogs: () => ipcRenderer.invoke("app:openLogs"),
   serverHealth: () => ipcRenderer.invoke("server:health"),
+  apiGet: (path: string) => ipcRenderer.invoke("api:get", path),
+  apiPut: (path: string, body: unknown) => ipcRenderer.invoke("api:put", path, body),
   onState: (cb: (state: unknown) => void) => {
     ipcRenderer.on("settings:state", (_e, state) => cb(state));
   },

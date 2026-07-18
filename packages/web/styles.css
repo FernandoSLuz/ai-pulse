@@ -1562,4 +1562,27 @@ body.widget-body {
   }
 }
 
+/* Redirect toast — settings moved to the desktop app */
+.app-toast {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 1000;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: #171c26;
+  border: 1px solid #2a3342;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  color: #e6ebf2;
+  font-size: 13px;
+}
+.app-toast-body { display: flex; flex-direction: column; gap: 4px; }
+.app-toast-body span { color: #97a1b2; }
+.app-toast-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.app-toast.hidden { display: none; }
+
 
