@@ -1,0 +1,41 @@
+name: Build Installer (debug)
+
+# On-demand installer build for iterating on packaging without cutting releases.
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install
+        run: npm ci
+
+      - name: Debug — dependency layout
+        shell: bash
+        run: |
+          echo "--- app-builder-bin ---"
+          ls -la node_modules/app-builder-bin 2>/dev/null || echo "MISSING app-builder-bin"
+          echo "--- app-builder-bin/win/x64 ---"
+          ls -la node_modules/app-builder-bin/win/x64 2>/dev/null || echo "MISSING win/x64"
+          echo "--- packages/widget/node_modules (hoisted?) ---"
+          ls packages/widget/node_modules 2>/dev/null | head || echo "no local node_modules (hoisted to root)"
+          echo "--- root has electron/better-sqlite3? ---"
+          ls -d node_modules/electron node_modules/better-sqlite3 2>/dev/null || echo "missing"
+
+      - name: Build installer
+        run: npm run dist:ci -w @ai-pulse/widget
+
+      - name: Upload installer artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-pulse-installer
+          path: packages/widget/release/*.exe
+          if-no-files-found: warn
