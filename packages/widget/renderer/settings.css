@@ -98,5 +98,12 @@ input[type="range"] { flex: 1; accent-color: var(--accent); }
 .prov .label { flex: 1; }
 .prov .state { font-size: 11px; color: var(--muted); }
 
+.prio { display: flex; flex-direction: column; gap: 6px; padding: 10px 0; }
+.prio-row { display: grid; grid-template-columns: 90px 1fr 34px; align-items: center; gap: 12px; }
+.prio-row span { color: var(--muted); }
+.prio-row b { text-align: right; font-weight: 600; }
+.prio-row input[type="range"] { accent-color: var(--accent); }
+select { background: var(--card-2); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 7px 10px; font: inherit; }
+
 .footer { display: flex; gap: 10px; padding: 12px 20px; border-top: 1px solid var(--border); }
 .hidden { display: none !important; }
