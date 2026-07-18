@@ -60,9 +60,14 @@ body { display: flex; flex-direction: column; }
 
 /* Keys */
 .keys { display: flex; flex-direction: column; gap: 8px; }
-.key-row { display: grid; grid-template-columns: 170px 1fr auto; align-items: center; gap: 10px; }
-.key-name { font-weight: 600; }
+.keys-group-head { font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); margin: 12px 0 2px; }
+.keys-group-head:first-child { margin-top: 0; }
+.key-row { display: grid; grid-template-columns: 210px 1fr auto; align-items: center; gap: 10px; }
+.key-name { font-weight: 600; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.key-role { font-weight: 500; font-size: 10px; color: var(--accent); }
 .key-hint { font-size: 10px; color: var(--muted); }
+.key-getlink { color: var(--accent); text-decoration: none; }
+.key-getlink:hover { text-decoration: underline; }
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
 .dot.on { background: var(--ok); }
 .dot.off { background: #39414f; }

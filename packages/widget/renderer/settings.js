@@ -1,13 +1,14 @@
 "use strict";
 const api = window.aiPulse;
 
+// curator: true => powers AI curation (the rotation). You need at least one.
 const KEY_META = {
-  GEMINI_API_KEY: { label: "Gemini", hint: "aistudio.google.com/apikey — best free quality" },
-  CEREBRAS_API_KEY: { label: "Cerebras", hint: "cloud.cerebras.ai — fast, generous free tier" },
-  GROQ_API_KEY: { label: "Groq", hint: "console.groq.com/keys — small daily budget" },
-  OPENROUTER_API_KEY: { label: "OpenRouter", hint: "openrouter.ai/keys — free model pool" },
-  AA_API_KEY: { label: "Artificial Analysis", hint: "artificialanalysis.ai/insights — benchmark data" },
-  TAVILY_API_KEY: { label: "Tavily", hint: "app.tavily.com — web search for chat" },
+  GEMINI_API_KEY: { label: "Gemini", role: "AI curator · 3.5 & 2.5 Flash", hint: "Best free quality", url: "https://aistudio.google.com/apikey", curator: true },
+  CEREBRAS_API_KEY: { label: "Cerebras", role: "AI curator · Llama 3.3 70B", hint: "Fast, generous free tier", url: "https://cloud.cerebras.ai", curator: true },
+  GROQ_API_KEY: { label: "Groq", role: "AI curator · Llama 3.1 8B", hint: "Fast; small daily budget", url: "https://console.groq.com/keys", curator: true },
+  OPENROUTER_API_KEY: { label: "OpenRouter", role: "AI curator · free pool", hint: "Llama 3.3 70B / DeepSeek V3 (free)", url: "https://openrouter.ai/keys", curator: true },
+  AA_API_KEY: { label: "Artificial Analysis", role: "Benchmarks", hint: "Live model rankings", url: "https://artificialanalysis.ai/insights", curator: false },
+  TAVILY_API_KEY: { label: "Tavily", role: "Chat web search", hint: "1,000 free credits/month", url: "https://app.tavily.com", curator: false },
 };
 
 let state = null;
@@ -15,63 +16,99 @@ const el = (id) => document.getElementById(id);
 
 // --- Connections ------------------------------------------------------------
 
+function renderKeyRow(name) {
+  const meta = KEY_META[name] || { label: name, hint: "", curator: false };
+  const configured = Boolean(state.config.keys[name]);
+  const row = document.createElement("div");
+  row.className = "key-row";
+
+  const info = document.createElement("div");
+  const title = document.createElement("div");
+  title.className = "key-name";
+  const dot = document.createElement("span");
+  dot.className = "dot " + (configured ? "on" : "off");
+  title.appendChild(dot);
+  title.appendChild(document.createTextNode(meta.label));
+  if (meta.role) {
+    const role = document.createElement("span");
+    role.className = "key-role";
+    role.textContent = meta.role;
+    title.appendChild(role);
+  }
+  const hint = document.createElement("div");
+  hint.className = "key-hint";
+  hint.textContent = meta.hint || "";
+  if (meta.url) {
+    hint.appendChild(document.createTextNode(" · "));
+    const link = document.createElement("a");
+    link.href = "#";
+    link.className = "key-getlink";
+    link.textContent = "Get key ↗";
+    link.addEventListener("click", (e) => {
+      e.preventDefault();
+      api.openExternal(meta.url);
+    });
+    hint.appendChild(link);
+  }
+  info.appendChild(title);
+  info.appendChild(hint);
+
+  const input = document.createElement("input");
+  input.type = "password";
+  input.placeholder = configured ? "•••••••• saved — paste to replace" : "Paste API key";
+
+  const btnWrap = document.createElement("div");
+  btnWrap.className = "btn-group";
+  const save = document.createElement("button");
+  save.className = "btn btn-small";
+  save.textContent = configured ? "Update" : "Save";
+  save.addEventListener("click", async () => {
+    const val = input.value.trim();
+    if (!val) return;
+    save.disabled = true;
+    save.textContent = "Saving…";
+    state = await api.setKey(name, val);
+    applyState();
+  });
+  btnWrap.appendChild(save);
+  if (configured) {
+    const clear = document.createElement("button");
+    clear.className = "btn btn-small btn-ghost";
+    clear.textContent = "Clear";
+    clear.addEventListener("click", async () => {
+      clear.disabled = true;
+      state = await api.setKey(name, "");
+      applyState();
+    });
+    btnWrap.appendChild(clear);
+  }
+
+  row.appendChild(info);
+  row.appendChild(input);
+  row.appendChild(btnWrap);
+  return row;
+}
+
 function renderKeys() {
   const container = el("keys");
   container.innerHTML = "";
-  for (const name of state.keyNames) {
-    const meta = KEY_META[name] || { label: name, hint: "" };
-    const configured = Boolean(state.config.keys[name]);
-    const row = document.createElement("div");
-    row.className = "key-row";
+  const curators = state.keyNames.filter((n) => KEY_META[n]?.curator);
+  const others = state.keyNames.filter((n) => !KEY_META[n]?.curator);
+  const anyCurator = curators.some((n) => state.config.keys[n]);
 
-    const info = document.createElement("div");
-    const title = document.createElement("div");
-    title.className = "key-name";
-    const dot = document.createElement("span");
-    dot.className = "dot " + (configured ? "on" : "off");
-    title.appendChild(dot);
-    title.appendChild(document.createTextNode(meta.label));
-    const hint = document.createElement("div");
-    hint.className = "key-hint";
-    hint.textContent = meta.hint;
-    info.appendChild(title);
-    info.appendChild(hint);
+  const group = (heading, names) => {
+    const h = document.createElement("div");
+    h.className = "keys-group-head";
+    h.textContent = heading;
+    container.appendChild(h);
+    for (const n of names) container.appendChild(renderKeyRow(n));
+  };
 
-    const input = document.createElement("input");
-    input.type = "password";
-    input.placeholder = configured ? "•••••••• saved — paste to replace" : "Paste API key";
-
-    const btnWrap = document.createElement("div");
-    btnWrap.className = "btn-group";
-    const save = document.createElement("button");
-    save.className = "btn btn-small";
-    save.textContent = configured ? "Update" : "Save";
-    save.addEventListener("click", async () => {
-      const val = input.value.trim();
-      if (!val) return;
-      save.disabled = true;
-      save.textContent = "Saving…";
-      state = await api.setKey(name, val);
-      applyState();
-    });
-    btnWrap.appendChild(save);
-    if (configured) {
-      const clear = document.createElement("button");
-      clear.className = "btn btn-small btn-ghost";
-      clear.textContent = "Clear";
-      clear.addEventListener("click", async () => {
-        clear.disabled = true;
-        state = await api.setKey(name, "");
-        applyState();
-      });
-      btnWrap.appendChild(clear);
-    }
-
-    row.appendChild(info);
-    row.appendChild(input);
-    row.appendChild(btnWrap);
-    container.appendChild(row);
-  }
+  group(
+    anyCurator ? "AI curators" : "AI curators — add at least one",
+    curators,
+  );
+  group("Data & search (optional)", others);
 }
 
 // --- Leaderboard ------------------------------------------------------------
