@@ -29,6 +29,9 @@ jobs:
           echo "--- root has electron/better-sqlite3? ---"
           ls -d node_modules/electron node_modules/better-sqlite3 2>/dev/null || echo "missing"
 
+      - name: Rebuild native modules for Electron
+        run: npx --yes @electron/rebuild -v 33.4.11 -o better-sqlite3
+
       - name: Build installer
         run: npm run dist:ci -w @ai-pulse/widget
 

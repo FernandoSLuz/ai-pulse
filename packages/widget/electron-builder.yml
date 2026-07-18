@@ -20,8 +20,11 @@ files:
   - package.json
   - "!**/*.map"
 
-# Rebuild native modules (better-sqlite3) for Electron's Node ABI.
-npmRebuild: true
+# Native modules are rebuilt for Electron by a CI step (@electron/rebuild) BEFORE
+# packaging. electron-builder's own rebuild spawns with cwd=<appDir>/node_modules,
+# which doesn't exist under npm-workspace hoisting, so we disable it here.
+npmRebuild: false
+nodeGypRebuild: false
 
 win:
   target:
