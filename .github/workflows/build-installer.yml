@@ -23,7 +23,10 @@ jobs:
       - name: Verify better-sqlite3 loads under Electron ABI (packaged)
         shell: bash
         run: |
-          P="$PWD/packages/widget/release/win-unpacked/resources/app/node_modules/better-sqlite3"
+          REL="packages/widget/release/win-unpacked/resources/app/node_modules/better-sqlite3"
+          echo "--- packaged better-sqlite3 binary ---"
+          ls -la "$REL/build/Release/" 2>&1 || echo "MISSING build/Release"
+          P="$(pwd -W)/$REL"
           ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron.exe -e "const D=require('$P'); new D(':memory:').close(); console.log('PKG better-sqlite3 OK under Electron ABI');"
 
       - name: Upload installer artifact
