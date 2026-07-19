@@ -41,6 +41,8 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: AI Pulse
   runAfterFinish: true
+  # Never wipe userData (config.json with API keys) on uninstall/update.
+  deleteAppDataOnUninstall: false
 
 # Register the aipulse:// deep link so the web dashboard can open the app.
 protocols:

@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { configPath, dataDir, serverBundleDir } from "./paths";
+import { configPath, dataDir, serverBundleDir, legacyConfigPaths } from "./paths";
 
 /**
  * User configuration, stored in userData/config.json. This is the single source
@@ -72,16 +72,59 @@ function coerce(raw: unknown): AppConfig {
 }
 
 export function loadConfig(): AppConfig {
-  try {
-    const raw = fs.readFileSync(configPath(), "utf8");
-    return coerce(JSON.parse(raw));
-  } catch {
-    return { ...DEFAULT_CONFIG, keys: {} };
+  const file = configPath();
+
+  // One-time migration: if this version has no config yet, adopt the most recent
+  // previous version's config so updates never lose saved API keys.
+  if (!fs.existsSync(file)) {
+    for (const legacy of legacyConfigPaths()) {
+      if (legacy !== file && fs.existsSync(legacy)) {
+        try {
+          fs.mkdirSync(path.dirname(file), { recursive: true });
+          fs.copyFileSync(legacy, file);
+          console.log(`[Config] Migrated settings from ${legacy}`);
+        } catch {
+          /* fall through to defaults */
+        }
+        break;
+      }
+    }
   }
+
+  // Read the config, falling back to the last-good backup if it's missing/corrupt.
+  for (const candidate of [file, `${file}.bak`]) {
+    try {
+      return coerce(JSON.parse(fs.readFileSync(candidate, "utf8")));
+    } catch {
+      /* try the next candidate */
+    }
+  }
+  return { ...DEFAULT_CONFIG, keys: {} };
 }
 
+/** Atomic write with a rolling backup so a crash mid-save can't lose keys. */
 export function saveConfig(config: AppConfig): void {
-  fs.writeFileSync(configPath(), JSON.stringify(config, null, 2), "utf8");
+  const file = configPath();
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const data = JSON.stringify(config, null, 2);
+  try {
+    if (fs.existsSync(file)) fs.copyFileSync(file, `${file}.bak`);
+  } catch {
+    /* backup is best-effort */
+  }
+  const tmp = `${file}.tmp`;
+  fs.writeFileSync(tmp, data, "utf8");
+  try {
+    fs.renameSync(tmp, file);
+  } catch {
+    // Fallback if atomic rename over an existing file isn't available.
+    fs.writeFileSync(file, data, "utf8");
+    try {
+      fs.rmSync(tmp, { force: true });
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 /** Build the environment for the server child from config + inherited env. */

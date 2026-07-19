@@ -43,6 +43,20 @@ export function configPath(): string {
   return path.join(app.getPath("userData"), "config.json");
 }
 
+/**
+ * Config locations used by earlier versions, for one-time migration so an
+ * update never loses saved API keys. (rc.1 stored under the scoped package
+ * name before app.setName("AI Pulse") moved userData to %APPDATA%\AI Pulse.)
+ */
+export function legacyConfigPaths(): string[] {
+  const appData = app.getPath("appData"); // %APPDATA% (Roaming)
+  return [
+    path.join(appData, "@ai-pulse", "widget", "config.json"),
+    path.join(appData, "@ai-pulse", "config.json"),
+    path.join(appData, "ai-pulse", "config.json"),
+  ];
+}
+
 /** Renderer HTML for the settings/control window. */
 export function settingsHtml(): string {
   return path.join(__dirname, "..", "renderer", "settings.html");
