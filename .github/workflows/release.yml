@@ -23,13 +23,47 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: Rebuild native modules for Electron
-        run: npx --yes @electron/rebuild -v 33.4.11 -o better-sqlite3
-
-      - name: Build installer (electron-builder NSIS)
-        run: npm run dist:ci -w @ai-pulse/widget
+      # Native better-sqlite3 must match Electron's ABI. npm rebuild works at the
+      # repo root (unlike inside the packed app / hoisted workspace); we then copy
+      # the resulting .node into the packed app and verify it loads under Electron.
+      - name: Rebuild better-sqlite3 for Electron (at root)
+        shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          npm_config_runtime: electron
+          npm_config_target: "33.4.11"
+          npm_config_dist_url: https://electronjs.org/headers
+          npm_config_arch: x64
+        run: npm rebuild better-sqlite3 --foreground-scripts
+
+      - name: Verify better-sqlite3 loads under Electron ABI (source)
+        shell: bash
+        run: ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron.exe -e "new (require('better-sqlite3'))(':memory:').close(); console.log('SRC OK');"
+
+      - name: Build unpacked app
+        shell: bash
+        run: |
+          npm run build -w @ai-pulse/widget
+          cd packages/widget && npx electron-builder --win --dir --publish never
+
+      - name: Copy Electron-ABI better-sqlite3 into the packed app
+        shell: bash
+        run: |
+          SRC="node_modules/better-sqlite3/build/Release/better_sqlite3.node"
+          DST="packages/widget/release/win-unpacked/resources/app/node_modules/better-sqlite3/build/Release/better_sqlite3.node"
+          cp -f "$SRC" "$DST"
+          echo "copied $(ls -la "$DST")"
+
+      - name: Verify better-sqlite3 loads under Electron ABI (packaged)
+        shell: bash
+        run: |
+          REL="packages/widget/release/win-unpacked/resources/app/node_modules/better-sqlite3"
+          P="$(pwd -W)/$REL"
+          ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron.exe -e "const D=require('$P'); new D(':memory:').close(); console.log('PKG better-sqlite3 OK under Electron ABI');"
+
+      - name: Package installer (NSIS) from the fixed app dir
+        shell: bash
+        run: |
+          cd packages/widget && npx electron-builder --win --prepackaged release/win-unpacked --publish never
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
