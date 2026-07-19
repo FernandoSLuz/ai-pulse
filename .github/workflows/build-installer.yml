@@ -18,7 +18,13 @@ jobs:
         run: npm ci
 
       - name: Rebuild better-sqlite3 for Electron
-        run: npx --yes @electron/rebuild --version 33.4.11 --only better-sqlite3 --force
+        shell: bash
+        env:
+          npm_config_runtime: electron
+          npm_config_target: 33.4.11
+          npm_config_dist_url: https://electronjs.org/headers
+          npm_config_arch: x64
+        run: npm rebuild better-sqlite3 --foreground-scripts
 
       - name: Verify better-sqlite3 loads under Electron ABI (source)
         shell: bash
