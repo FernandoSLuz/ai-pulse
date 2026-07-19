@@ -17,23 +17,22 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: Debug — dependency layout
+      - name: Rebuild better-sqlite3 for Electron
+        run: npx --yes @electron/rebuild --version 33.4.11 --only better-sqlite3 --force
+
+      - name: Verify better-sqlite3 loads under Electron ABI (source)
         shell: bash
         run: |
-          echo "--- app-builder-bin ---"
-          ls -la node_modules/app-builder-bin 2>/dev/null || echo "MISSING app-builder-bin"
-          echo "--- app-builder-bin/win/x64 ---"
-          ls -la node_modules/app-builder-bin/win/x64 2>/dev/null || echo "MISSING win/x64"
-          echo "--- packages/widget/node_modules (hoisted?) ---"
-          ls packages/widget/node_modules 2>/dev/null | head || echo "no local node_modules (hoisted to root)"
-          echo "--- root has electron/better-sqlite3? ---"
-          ls -d node_modules/electron node_modules/better-sqlite3 2>/dev/null || echo "missing"
-
-      - name: Rebuild native modules for Electron
-        run: npx --yes @electron/rebuild -v 33.4.11 -o better-sqlite3
+          ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron.exe -e "const D=require('better-sqlite3'); const db=new D(':memory:'); db.exec('create table t(x)'); db.close(); console.log('SRC better-sqlite3 OK under Electron ABI');"
 
       - name: Build installer
         run: npm run dist:ci -w @ai-pulse/widget
+
+      - name: Verify better-sqlite3 loads under Electron ABI (packaged)
+        shell: bash
+        run: |
+          P="$PWD/packages/widget/release/win-unpacked/resources/app/node_modules/better-sqlite3"
+          ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron.exe -e "const D=require('$P'); new D(':memory:').close(); console.log('PKG better-sqlite3 OK under Electron ABI');"
 
       - name: Upload installer artifact
         if: always()

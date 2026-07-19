@@ -12,6 +12,10 @@ import {
 import { serverLogPath, settingsHtml, settingsPreload, leaderboardPreload } from "./src/paths";
 import { Updater } from "./src/updater";
 
+// Set the app name before anything reads app.getPath("userData"), so config,
+// data, and logs live under %APPDATA%\AI Pulse (not the scoped package name).
+app.setName("AI Pulse");
+
 const WIDGET_WIDTH = 760;
 const TOP_MARGIN = 12;
 const WIDGET_ROW_HEIGHT = 21;
