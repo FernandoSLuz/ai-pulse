@@ -26,6 +26,9 @@ files:
 npmRebuild: false
 nodeGypRebuild: false
 
+# Rebuild better-sqlite3 for Electron inside the packed app (see build/after-pack.js).
+afterPack: build/after-pack.js
+
 win:
   target:
     - nsis

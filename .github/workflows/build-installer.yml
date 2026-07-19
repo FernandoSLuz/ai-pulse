@@ -17,21 +17,7 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: Rebuild better-sqlite3 for Electron
-        shell: bash
-        env:
-          npm_config_runtime: electron
-          npm_config_target: 33.4.11
-          npm_config_dist_url: https://electronjs.org/headers
-          npm_config_arch: x64
-        run: npm rebuild better-sqlite3 --foreground-scripts
-
-      - name: Verify better-sqlite3 loads under Electron ABI (source)
-        shell: bash
-        run: |
-          ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron.exe -e "const D=require('better-sqlite3'); const db=new D(':memory:'); db.exec('create table t(x)'); db.close(); console.log('SRC better-sqlite3 OK under Electron ABI');"
-
-      - name: Build installer
+      - name: Build installer (afterPack rebuilds better-sqlite3 for Electron)
         run: npm run dist:ci -w @ai-pulse/widget
 
       - name: Verify better-sqlite3 loads under Electron ABI (packaged)
