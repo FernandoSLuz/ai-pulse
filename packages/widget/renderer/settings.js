@@ -428,6 +428,10 @@ function wireControls() {
     renderUpdate();
   });
   el("update-install").addEventListener("click", () => api.updateInstall());
+  el("open-releases").addEventListener("click", (e) => {
+    e.preventDefault();
+    api.openExternal("https://github.com/FernandoSLuz/ai-pulse/releases");
+  });
 }
 
 async function init() {

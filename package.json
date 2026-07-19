@@ -11,5 +11,5 @@
     "app": "npm run build && npm run start -w @ai-pulse/widget",
     "widget": "npm run start -w @ai-pulse/widget"
   },
-  "version": "1.0.0-rc.2"
+  "version": "1.0.0-rc.3"
 }

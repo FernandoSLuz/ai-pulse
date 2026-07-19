@@ -1,6 +1,6 @@
 {
   "name": "@ai-pulse/widget",
-  "version": "1.0.0-rc.2",
+  "version": "1.0.0-rc.3",
   "private": true,
   "description": "AI Pulse desktop app — tray, server supervisor, settings, and the leaderboard widget.",
   "main": "dist/main.js",
