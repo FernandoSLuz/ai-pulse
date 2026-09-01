@@ -50,6 +50,7 @@ export interface VideoItem {
   publishedAt: string;
   thumbnail: string;
   fetchedAt: string;
+  kind?: "creator" | "company";
 }
 
 export interface CategoryWinners {

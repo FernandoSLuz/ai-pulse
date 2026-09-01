@@ -28,7 +28,7 @@ import { fetchAaPublicSiteModels } from "./fetchers/aa-public-site.js";
 import { mergeBenchmarkModels } from "./fetchers/merge-models.js";
 import { enrichAccessibility } from "./fetchers/huggingface-access.js";
 import { fetchAllNews } from "./fetchers/rss-aggregator.js";
-import { fetchCreatorVideos } from "./fetchers/youtube-channels.js";
+import { fetchCreatorVideos, fetchCompanyVideos } from "./fetchers/youtube-channels.js";
 import { buildRankingsSnapshot, detectLeaderChanges } from "./rankings.js";
 import { evaluatePollHealth, recordSuccessfulPoll } from "./poll-health.js";
 import {
@@ -178,8 +178,10 @@ app.post("/api/news/refresh", async (_req, res) => {
 app.get("/api/videos", (req, res) => {
   try {
     const limit = Number(req.query.limit) || 40;
+    const rawKind = (req.query.kind as string) ?? "creator";
+    const kind = rawKind === "company" || rawKind === "all" ? rawKind : "creator";
     res.json({
-      items: getVideos(limit),
+      items: getVideos(limit, kind),
       updatedAt: getMeta("videos_last_poll"),
     });
   } catch (err) {
@@ -516,17 +518,44 @@ async function pollNews(): Promise<void> {
 }
 
 async function pollVideos(): Promise<void> {
-  console.log("[Poll] Fetching YouTube creators...");
+  console.log("[Poll] Fetching YouTube creators and company channels...");
   try {
-    const videos = await fetchCreatorVideos();
-    const newVideos = upsertVideos(videos);
+    const [creatorsResult, companiesResult] = await Promise.allSettled([
+      fetchCreatorVideos(),
+      fetchCompanyVideos(),
+    ]);
+
+    if (creatorsResult.status === "rejected") {
+      console.error("[Poll] YouTube creator fetch failed:", creatorsResult.reason);
+    }
+    if (companiesResult.status === "rejected") {
+      console.error("[Poll] YouTube company fetch failed:", companiesResult.reason);
+    }
+
+    const creatorVideos = creatorsResult.status === "fulfilled" ? creatorsResult.value : [];
+    const companyVideos = companiesResult.status === "fulfilled" ? companiesResult.value : [];
+    if (creatorsResult.status === "rejected" && companiesResult.status === "rejected") return;
+
+    const newCreatorVideos = upsertVideos(creatorVideos);
+    const newCompanyVideos = upsertVideos(companyVideos);
     setMeta("videos_last_poll", new Date().toISOString());
     broadcast({
       type: "videos",
-      payload: { items: getVideos(40), updatedAt: getMeta("videos_last_poll") },
+      payload: {
+        items: getVideos(40, "creator"),
+        companyItems: getVideos(40, "company"),
+        updatedAt: getMeta("videos_last_poll"),
+      },
     });
 
-    for (const v of newVideos.slice(0, 5)) {
+    // Interleave both kinds by publishedAt so neither monopolizes the combined cap of 5.
+    const candidates = [
+      ...newCreatorVideos.map((v) => ({ ...v, kind: "creator" as const })),
+      ...newCompanyVideos.map((v) => ({ ...v, kind: "company" as const })),
+    ]
+      .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
+      .slice(0, 5);
+    for (const v of candidates) {
       notifyFromEvent({
         type: "new_video",
         details: { id: v.id, title: v.title, channel: v.channel },

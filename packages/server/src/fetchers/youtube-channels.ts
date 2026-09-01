@@ -23,18 +23,22 @@ interface YtChannel {
 
 interface SourcesConfig {
   youtubeChannels: YtChannel[];
+  companyChannels?: YtChannel[];
 }
 
-function loadChannels(): YtChannel[] {
+function loadSources(): SourcesConfig {
   const base = process.env.AI_PULSE_RESOURCE_DIR ?? path.join(__dirname, "..", "..");
   const configPath = path.join(base, "config", "sources.json");
   try {
-    const raw = JSON.parse(fs.readFileSync(configPath, "utf8")) as SourcesConfig;
-    return raw.youtubeChannels ?? [];
+    return JSON.parse(fs.readFileSync(configPath, "utf8")) as SourcesConfig;
   } catch (err) {
     console.warn("[YouTube] Failed to load sources.json:", (err as Error).message);
-    return [];
+    return { youtubeChannels: [], companyChannels: [] };
   }
+}
+
+function loadChannels(): YtChannel[] {
+  return loadSources().youtubeChannels ?? [];
 }
 
 function extractVideoId(entry: Parser.Item): string | null {
@@ -83,14 +87,14 @@ async function fetchChannelFeed(ch: YtChannel): Promise<VideoItem[]> {
       publishedAt: entry.isoDate ?? entry.pubDate ?? new Date().toISOString(),
       thumbnail: extractThumbnail(entry as Parser.Item & { mediaGroup?: unknown }),
       fetchedAt: new Date().toISOString(),
+      kind: "creator",
     });
   }
 
   return items;
 }
 
-export async function fetchCreatorVideos(): Promise<VideoItem[]> {
-  const channels = loadChannels();
+async function fetchChannelFeeds(channels: YtChannel[], kind: "creator" | "company"): Promise<VideoItem[]> {
   const items: VideoItem[] = [];
   let ok = 0;
   let failed = 0;
@@ -116,9 +120,17 @@ export async function fetchCreatorVideos(): Promise<VideoItem[]> {
     for (const batchItems of results) items.push(...batchItems);
   }
 
-  console.log(`[YouTube] Completed with ${ok} ok, ${failed} failed (${items.length} videos)`);
+  console.log(`[YouTube] Completed (${kind}) with ${ok} ok, ${failed} failed (${items.length} videos)`);
 
-  return items.sort(
-    (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime(),
-  );
+  return items
+    .map((v) => ({ ...v, kind }))
+    .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+}
+
+export async function fetchCreatorVideos(): Promise<VideoItem[]> {
+  return fetchChannelFeeds(loadChannels(), "creator");
+}
+
+export async function fetchCompanyVideos(): Promise<VideoItem[]> {
+  return fetchChannelFeeds(loadSources().companyChannels ?? [], "company");
 }

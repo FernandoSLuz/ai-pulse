@@ -124,11 +124,13 @@ function initSchema(database: Database.Database): void {
       channel_handle TEXT,
       published_at TEXT,
       thumbnail TEXT,
+      kind TEXT DEFAULT 'creator',
       fetched_at TEXT
     );
   `);
 
   migrateNewsColumns(database);
+  migrateVideoColumns(database);
 
   const stack = database.prepare("SELECT id FROM user_stack WHERE id = 1").get();
   if (!stack) {
@@ -171,6 +173,15 @@ function migrateNewsColumns(database: Database.Database): void {
   add("ai_pick_reason", "ai_pick_reason TEXT");
   add("ai_pick_period", "ai_pick_period TEXT");
   add("ai_curated_at", "ai_curated_at TEXT");
+}
+
+function migrateVideoColumns(database: Database.Database): void {
+  const cols = database.prepare("PRAGMA table_info(videos)").all() as { name: string }[];
+  const names = new Set(cols.map((c) => c.name));
+  const add = (name: string, ddl: string) => {
+    if (!names.has(name)) database.exec(`ALTER TABLE videos ADD COLUMN ${ddl}`);
+  };
+  add("kind", "kind TEXT DEFAULT 'creator'");
 }
 
 function periodSince(period?: NewsPeriod): string | null {
@@ -382,8 +393,8 @@ export function upsertVideos(items: VideoItem[]): VideoItem[] {
   const newItems: VideoItem[] = [];
   const exists = database.prepare("SELECT id FROM videos WHERE id = ?");
   const stmt = database.prepare(`
-    INSERT INTO videos (id, title, link, channel, channel_handle, published_at, thumbnail, fetched_at)
-    VALUES (@id, @title, @link, @channel, @channelHandle, @publishedAt, @thumbnail, @fetchedAt)
+    INSERT INTO videos (id, title, link, channel, channel_handle, published_at, thumbnail, kind, fetched_at)
+    VALUES (@id, @title, @link, @channel, @channelHandle, @publishedAt, @thumbnail, @kind, @fetchedAt)
     ON CONFLICT(id) DO UPDATE SET
       title = excluded.title,
       link = excluded.link,
@@ -391,13 +402,14 @@ export function upsertVideos(items: VideoItem[]): VideoItem[] {
       channel_handle = excluded.channel_handle,
       published_at = excluded.published_at,
       thumbnail = excluded.thumbnail,
+      kind = excluded.kind,
       fetched_at = excluded.fetched_at
   `);
 
   const tx = database.transaction((videos: VideoItem[]) => {
     for (const v of videos) {
       const isNew = !exists.get(v.id);
-      stmt.run(v);
+      stmt.run({ ...v, kind: v.kind ?? "creator" });
       if (isNew) newItems.push(v);
     }
   });
@@ -405,10 +417,16 @@ export function upsertVideos(items: VideoItem[]): VideoItem[] {
   return newItems;
 }
 
-export function getVideos(limit = 40): VideoItem[] {
-  const rows = getDb()
-    .prepare("SELECT * FROM videos ORDER BY published_at DESC LIMIT ?")
-    .all(limit) as Record<string, unknown>[];
+export function getVideos(limit = 40, kind: "creator" | "company" | "all" = "creator"): VideoItem[] {
+  const database = getDb();
+  const rows =
+    kind === "all"
+      ? (database
+          .prepare("SELECT * FROM videos ORDER BY published_at DESC LIMIT ?")
+          .all(limit) as Record<string, unknown>[])
+      : (database
+          .prepare("SELECT * FROM videos WHERE kind = ? ORDER BY published_at DESC LIMIT ?")
+          .all(kind, limit) as Record<string, unknown>[]);
   return rows.map((row) => ({
     id: row.id as string,
     title: row.title as string,
@@ -418,6 +436,7 @@ export function getVideos(limit = 40): VideoItem[] {
     publishedAt: (row.published_at as string) ?? "",
     thumbnail: (row.thumbnail as string) ?? "",
     fetchedAt: (row.fetched_at as string) ?? "",
+    kind: (row.kind as VideoItem["kind"]) ?? "creator",
   }));
 }
 
