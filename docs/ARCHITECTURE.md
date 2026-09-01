@@ -35,7 +35,7 @@ The web dashboard's settings gear no longer edits anything itself: it redirects 
 
 The server is the workhorse. It:
 
-- Polls **Artificial Analysis** for benchmarks, **RSS feeds** for news, and **YouTube** for creator videos.
+- Polls **Artificial Analysis** for benchmarks, **RSS feeds** for news, and **YouTube** for creator **and company** videos.
 - Runs the **AI analyst** to curate and brief.
 - Persists everything to **SQLite** (`better-sqlite3`).
 - Serves the **REST API**, the **WebSocket feed**, and the **static web dashboard**.
@@ -44,7 +44,7 @@ It listens on **port 3847** by default (configurable in Settings).
 
 ### `packages/web` — the static dashboard
 
-A static browser dashboard served by the server. It renders news, benchmarks, videos, chat, and briefings. It holds no configuration — its settings gear defers to the desktop app.
+A static browser dashboard served by the server. It renders news, benchmarks, creator videos, company videos, chat, and briefings. It holds no configuration — its settings gear defers to the desktop app.
 
 ## Process model
 
@@ -99,7 +99,7 @@ flowchart TD
 
 A **poll cycle** moves data from the outside world into SQLite, decides what changed, and pushes updates to any connected clients:
 
-1. **Fetch.** Pull the latest benchmarks (Artificial Analysis), news (RSS), and videos (YouTube).
+1. **Fetch.** Pull the latest benchmarks (Artificial Analysis), news (RSS), and videos (YouTube creators + companies).
 2. **Upsert.** Write the fetched records into SQLite.
 3. **Detect changes.** Compare against what's already stored to find new models, leader changes, breaking news, and other deltas.
 4. **Run the analyst.** The **LLM router** (see below) curates and produces briefings/analysis for the changes.
@@ -135,11 +135,25 @@ Curation **never silently degrades**. Every run records which provider served it
 | Path | Role |
 | --- | --- |
 | `fetchers/` | Pull benchmarks (Artificial Analysis), news (RSS), and videos (YouTube). |
+| `collapse-variants.ts` | Presentation-only collapse of effort/reasoning variants for the leaderboard. |
+| `rankings.ts` | Builds `/api/rankings` after collapse; winners and ★ always point at a visible row. |
 | `analyst/llm-router.ts` | Routes curation across cloud providers with per‑provider backoff. |
 | `analyst/engine.ts` | Runs the AI analyst / curation logic. |
 | `poll-health.ts` | Records poll outcomes and provider status surfaced by `/api/health`. |
 | `db.ts` | SQLite access via `better-sqlite3`. |
 | `chat/` | The embedded chat web‑search agent. |
+
+## Video `kind` and client contracts
+
+Each `VideoItem` has `kind: "creator" | "company"` (absent = creator). `migrateVideoColumns` adds the column with default `'creator'` so existing rows stay valid. `GET /api/videos` without `kind` returns **creators only** — that is the contract the compact widget (`?limit=3`) and older bundled dashboards rely on. `?kind=company` feeds the Companies panel; `?kind=all` is available for tooling.
+
+The WebSocket payload `{type:"videos"}` keeps `items` as creators and adds `companyItems` for the Companies panel. Do not rename those fields.
+
+Company channels live in `config/sources.json` as `companyChannels` (same shape as `youtubeChannels`). They are polled alongside creators; a company-fetch failure must not block creator persist/broadcast.
+
+## Variant collapse (presentation only)
+
+`merge-models.ts` still merges **by slug** so variants stay separate in SQLite. `buildRankingsSnapshot` sorts by intelligence, then `collapseVariants` groups effort/reasoning siblings and keeps one survivor (highest intelligence → highest coding → lowest price). The snapshot includes `variantAliases` (collapsed slug → visible slug) and `variantsCollapsed`. Clients resolve saved My Stack slugs through that map so `#N PRI` and `row-mine` stay on a visible row. `/api/models` still lists every variant so the user can pick the exact one.
 
 ### `packages/widget`
 

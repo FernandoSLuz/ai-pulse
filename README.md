@@ -22,8 +22,10 @@ That's it. AI Pulse now runs in your tray and starts automatically on login (you
 
 ## What you get
 
-- **News feed** — curated RSS sources, de-duplicated and scored.
-- **Benchmark table** — Artificial Analysis intelligence, coding, math, price, speed, accessibility.
+- **News feed** — curated RSS sources, de-duplicated and scored (lab blogs plus press).
+- **Creators** — YouTube videos from independent AI channels.
+- **Companies** — official lab/company YouTube videos in a separate dashboard panel (not mixed into Creators).
+- **Benchmark table** — Artificial Analysis intelligence, coding, math, price, speed, accessibility. Effort/reasoning variants of the same model collapse into one visible row (aliases keep My Stack highlights on the survivor).
 - **AI Analyst** — a briefing on new models, leader changes, and big news.
 - **Ask AI Pulse** — chat with free models plus an automatic web-search agent.
 - **My Stack** — track your current model and get upgrade suggestions when something better lands.

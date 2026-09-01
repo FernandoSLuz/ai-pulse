@@ -64,6 +64,26 @@ The Settings window is organized into these sections:
 - **Notifications** — breaking news, new models & leader changes, upgrade suggestions.
 - **AI curation health** — live provider status and last outcome.
 
+## News feeds, company channels, and `tier`
+
+`packages/server/config/sources.json` is **reread on every poll cycle** (RSS ~20 min, YouTube ~30 min). Adding a feed or channel does not require a code change or a server restart. There is no schema validation: broken JSON means that source silently returns nothing.
+
+| Array | Purpose |
+| --- | --- |
+| `feeds` | RSS/Atom news sources. Each item is `{ url, source, tier }`. |
+| `youtubeChannels` | Independent creator channels shown in the **Creators** panel. `{ name, handle, channelId }`. |
+| `companyChannels` | Official lab/company channels shown in the **Companies** panel. Same shape as `youtubeChannels`. |
+
+`tier` is **not** a relevance score. It only decides which story wins when two headlines are treated as the same cluster (48h window + Jaccard ≥ 0.55): **the smaller number wins**. Defaults to 99 if omitted.
+
+| `tier` | Meaning |
+| --- | --- |
+| 1 | Official lab/blog/changelog |
+| 2 | Press and Google News queries |
+| 3 | Community (HN, Reddit, …) |
+
+New feed URLs must be verified with a real GET (HTTP 200 + parseable RSS/Atom + at least one item in the last 90 days) before they enter this file. YouTube `channelId` values come from `youtube.com/@handle` (`"externalId":"UC…"`), never guessed.
+
 ## Developer environment variables
 
 For **local development** only, running the server standalone reads a repo-root `.env` file — see [`.env.example`](../.env.example). The packaged app does **not** use `.env`; it injects config from `config.json` instead.
