@@ -340,7 +340,7 @@ a:hover {
 
 .content-grid {
   display: grid;
-  grid-template-columns: 1.1fr 1fr 0.95fr;
+  grid-template-columns: 1.1fr 1fr 0.95fr 0.95fr;
   gap: 16px;
   margin-bottom: 20px;
 }
@@ -349,7 +349,8 @@ a:hover {
   .content-grid {
     grid-template-columns: 1fr 1fr;
   }
-  .creators-panel {
+  .creators-panel,
+  .companies-panel {
     grid-column: 1 / -1;
   }
 }
@@ -359,7 +360,8 @@ a:hover {
   .content-grid {
     grid-template-columns: 1fr;
   }
-  .creators-panel {
+  .creators-panel,
+  .companies-panel {
     grid-column: auto;
   }
 }

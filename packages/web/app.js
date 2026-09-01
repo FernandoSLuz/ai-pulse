@@ -9,6 +9,8 @@ let state = {
   aiPickPeriod: "today",
   videos: [],
   videosUpdatedAt: null,
+  companyVideos: [],
+  companyVideosUpdatedAt: null,
   briefing: null,
   stack: null,
   newsCategory: "all",
@@ -99,7 +101,10 @@ function connectWs() {
       const payload = msg.payload;
       state.videos = payload?.items ?? [];
       state.videosUpdatedAt = payload?.updatedAt ?? null;
+      state.companyVideos = payload?.companyItems ?? [];
+      state.companyVideosUpdatedAt = payload?.updatedAt ?? null;
       renderCreators();
+      renderCompanyVideos();
     }
     if (msg.type === "briefing") {
       state.briefing = msg.payload;
@@ -390,6 +395,30 @@ function renderCreators() {
   `).join("");
 }
 
+function renderCompanyVideos() {
+  const feed = document.getElementById("companies-feed");
+  const updated = document.getElementById("companies-videos-updated");
+  if (!feed) return;
+  if (updated) {
+    updated.textContent = state.companyVideosUpdatedAt ? `Updated ${timeAgo(state.companyVideosUpdatedAt)}` : "";
+  }
+  const items = state.companyVideos ?? [];
+  if (!items.length) {
+    feed.innerHTML = `<p class="muted">No company uploads yet. YouTube channels poll every 30 minutes.</p>`;
+    return;
+  }
+  feed.innerHTML = items.slice(0, 30).map((v) => `
+    <a class="creator-card" href="${escapeHtml(v.link)}" target="_blank" rel="noopener">
+      <img class="creator-thumb" src="${escapeHtml(v.thumbnail)}" alt="" loading="lazy" width="120" height="68" />
+      <div class="creator-body">
+        <div class="creator-channel">${escapeHtml(v.channel)}</div>
+        <div class="creator-title">${escapeHtml(v.title)}</div>
+        <div class="muted">${timeAgo(v.publishedAt)}</div>
+      </div>
+    </a>
+  `).join("");
+}
+
 async function loadNews(period = state.newsPeriod, category = state.newsCategory) {
   const params = new URLSearchParams({
     limit: "50",
@@ -416,6 +445,13 @@ async function loadVideos() {
   state.videos = data.items ?? [];
   state.videosUpdatedAt = data.updatedAt ?? null;
   renderCreators();
+}
+
+async function loadCompanyVideos() {
+  const data = await fetchJson("/api/videos?kind=company&limit=40");
+  state.companyVideos = data.items ?? [];
+  state.companyVideosUpdatedAt = data.updatedAt ?? null;
+  renderCompanyVideos();
 }
 
 function winnerBadges(slug, winners) {
@@ -1190,6 +1226,7 @@ async function init() {
     loadStack().catch((err) => console.error(err)),
     loadAiPicks("today").catch((err) => console.error(err)),
     loadVideos().catch((err) => console.error(err)),
+    loadCompanyVideos().catch((err) => console.error(err)),
     loadChatModels().catch((err) => console.error(err)),
   ]);
 
@@ -1197,6 +1234,7 @@ async function init() {
   renderNews();
   renderAiPicks();
   renderCreators();
+  renderCompanyVideos();
   renderRankings();
 
   document.querySelectorAll("#rankings-table th.sortable").forEach((th) => {
