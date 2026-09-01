@@ -14,6 +14,8 @@ export interface ModelRecord {
   accessibilityScore: number;
   fetchedAt: string;
   url?: string | null;
+  displayName?: string;
+  variants?: { slug: string; name: string }[];
 }
 
 export interface NewsItem {
@@ -66,6 +68,8 @@ export interface RankingsSnapshot {
   models: ModelRecord[];
   winners: CategoryWinners;
   updatedAt: string;
+  variantAliases?: Record<string, string>;
+  variantsCollapsed?: number;
   health?: {
     stale: boolean;
     warning: string | null;

@@ -389,7 +389,7 @@ async function pollBenchmarks(): Promise<void> {
     lastNewSlugs = newSlugs;
     lastLeaderChanges = leaderChanges;
 
-    const { profile: stack, newlySuggested, newRoleGaps } = updateStackSuggestion(snapshot.models);
+    const { profile: stack, newlySuggested, newRoleGaps } = updateStackSuggestion(getAllModels());
     broadcast({ type: "rankings", payload: snapshot });
     broadcast({ type: "stack", payload: stack });
 

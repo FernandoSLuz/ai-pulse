@@ -1,3 +1,4 @@
+import { normalizeVariantKey } from "./collapse-variants.js";
 import { clearLatestBriefingUpgrade, getAllModels, getModelBySlug, getMyStack, saveMyStack, getNotifiedRoleGaps, setNotifiedRoleGaps } from "./db.js";
 import type {
   ModelRecord,
@@ -94,7 +95,7 @@ function recommendForEntry(
     entry.role === "free"
       ? preferFreeUnlimitedPool(models, preferFreeUnlimited)
       : models;
-  pool = pool.filter((m) => m.slug !== current.slug);
+  pool = pool.filter((m) => normalizeVariantKey(m.name) !== normalizeVariantKey(current.name));
 
   if (entry.role === "free") {
     pool = pool.filter(isFreeOrOpen);

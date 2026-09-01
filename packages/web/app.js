@@ -148,6 +148,16 @@ function cleanHeadline(text) {
   return String(text).replace(/\((\d+\.\d{2,})\)/g, (_, n) => `(${Number(n).toFixed(1)})`);
 }
 
+function resolveSlug(slug) {
+  return state.rankings?.variantAliases?.[slug] ?? slug;
+}
+
+function variantHoverTitle(model) {
+  const variants = model?.variants ?? [];
+  if (!variants.length) return "";
+  return `+${variants.length} variantes: ${variants.map((v) => v.name).join(", ")}`;
+}
+
 function renderStackSummary() {
   const entries = (state.stack?.entries ?? []).filter((e) => e.modelSlug);
   if (!entries.length) {
@@ -160,7 +170,7 @@ function renderStackSummary() {
     ${entries.map((e) => {
       const areas = normalizeAreas(e).map((a) => AREA_LABELS[a] || a).join(", ");
       const providers = normalizeProviders(e).join(", ");
-      const model = state.rankings?.models?.find((m) => m.slug === e.modelSlug);
+      const model = state.rankings?.models?.find((m) => m.slug === resolveSlug(e.modelSlug));
       const intel = model ? fmtMetric(model.intelligence, 1) : "—";
       const price = model ? `$${model.priceBlended.toFixed(2)}` : "—";
       return `<div class="stack-row">
@@ -479,7 +489,7 @@ function renderRankings() {
     ? `⚠ ${r.health.warning}`
     : `Updated ${timeAgo(r.updatedAt)}`;
   updated.classList.toggle("stale-warning", Boolean(r.health?.stale));
-  const mine = state.stack?.primaryModelSlug;
+  const mine = resolveSlug(state.stack?.primaryModelSlug);
   const sorted = sortModels(r.models);
 
   tbody.innerHTML = sorted.slice(0, 30).map((m, i) => {
@@ -487,9 +497,11 @@ function renderRankings() {
       i === 0 ? "row-gold" : "",
       m.slug === mine ? "row-mine" : "",
     ].filter(Boolean).join(" ");
+    const shownName = m.displayName ?? m.name;
+    const hover = variantHoverTitle(m);
     return `<tr class="${cls}">
       <td>${i + 1}</td>
-      <td class="${state.sortKey === "name" ? "col-sort-active" : ""}">${escapeHtml(m.name)}</td>
+      <td class="${state.sortKey === "name" ? "col-sort-active" : ""}" ${hover ? `title="${escapeHtml(hover)}"` : ""}>${escapeHtml(shownName)}</td>
       <td class="${state.sortKey === "creator" ? "col-sort-active" : ""}">${escapeHtml(m.creator)}</td>
       <td class="${state.sortKey === "intelligence" ? "col-sort-active" : ""}">${fmtMetric(m.intelligence, 1)}</td>
       <td class="${state.sortKey === "coding" ? "col-sort-active" : ""}">${fmtMetric(m.coding, 1)}</td>
@@ -625,7 +637,7 @@ function renderStackEntries() {
     const areas = normalizeAreas(e);
     const providers = normalizeProviders(e);
     const suggested = e.suggestedUpgradeSlug && !e.suggestedUpgradeDismissed
-      ? state.rankings?.models?.find((m) => m.slug === e.suggestedUpgradeSlug)
+      ? state.rankings?.models?.find((m) => m.slug === resolveSlug(e.suggestedUpgradeSlug))
       : null;
     const suggestHtml = suggested
       ? `<div class="entry-suggestion">
@@ -770,7 +782,7 @@ function updateSuggestionUI() {
   }
   box.classList.remove("hidden");
   box.innerHTML = pending.map((e) => {
-    const model = state.rankings?.models?.find((m) => m.slug === e.suggestedUpgradeSlug);
+    const model = state.rankings?.models?.find((m) => m.slug === resolveSlug(e.suggestedUpgradeSlug));
     const areas = normalizeAreas(e).map((a) => AREA_LABELS[a] || a).join(", ");
     const providers = normalizeProviders(e).join(", ");
     return `<div class="suggestion-line">

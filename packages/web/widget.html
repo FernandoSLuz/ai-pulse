@@ -173,22 +173,28 @@
       );
     }
 
+    function resolveSlug(slug) {
+      return rankings?.variantAliases?.[slug] ?? slug;
+    }
+
     /** Map slug → stack roles (a model can appear in multiple roles). */
     function stackRoleMap() {
       const map = new Map();
       for (const e of stack?.entries ?? []) {
         if (!e.modelSlug) continue;
-        const list = map.get(e.modelSlug) ?? [];
+        const slug = resolveSlug(e.modelSlug);
+        const list = map.get(slug) ?? [];
         list.push(e);
-        map.set(e.modelSlug, list);
+        map.set(slug, list);
       }
       return map;
     }
 
     function intelRankIndex(slug) {
       if (!rankings?.models?.length) return -1;
+      const resolved = resolveSlug(slug);
       const byIntel = [...rankings.models].sort((a, b) => b.intelligence - a.intelligence);
-      return byIntel.findIndex((m) => m.slug === slug);
+      return byIntel.findIndex((m) => m.slug === resolved);
     }
 
     function leaderIntel() {
@@ -208,7 +214,7 @@
 
       const cards = entries.map((e) => {
         const meta = ROLE_META[e.role] || { short: e.role, label: e.role, className: "role-primary" };
-        const model = rankings?.models?.find((m) => m.slug === e.modelSlug);
+        const model = rankings?.models?.find((m) => m.slug === resolveSlug(e.modelSlug));
         const rank = intelRankIndex(e.modelSlug);
         const intel = model?.intelligence ?? 0;
         const delta = top && intel ? intel - top : 0;
@@ -276,7 +282,7 @@
         const extras = [];
         for (const slug of rolesBySlug.keys()) {
           if (shown.has(slug)) continue;
-          const m = all.find((x) => x.slug === slug);
+          const m = all.find((x) => x.slug === resolveSlug(slug));
           if (m) extras.push(m);
         }
         if (extras.length) rows = [...extras, ...visible];
@@ -299,11 +305,17 @@
         const rank = win ? `${rankNum}<span class="widget-win">${win}</span>` : String(rankNum);
         const rowClass = `${isMine ? "is-mine" : ""} ${standing === 0 ? "is-top" : ""} ${m.url ? "is-link" : ""}`.trim();
         const dataHref = m.url ? ` data-href="${escapeAttr(m.url)}"` : "";
-        const label = shortName(m.name);
+        const label = shortName(m.displayName ?? m.name);
         const roleTitles = (mineEntries ?? []).map((e) => ROLE_META[e.role]?.label || e.role).join(", ");
+        const variantTitle = (m.variants?.length)
+          ? `+${m.variants.length} variantes: ${m.variants.map((v) => v.name).join(", ")}`
+          : "";
+        const hover = [m.displayName ?? m.name, m.creator, roleTitles ? `Your ${roleTitles}` : "", variantTitle, m.url ? "click to open" : ""]
+          .filter(Boolean)
+          .join(" · ");
 
         return `
-        <tr class="${rowClass}"${dataHref} title="${escapeAttr(m.name)} · ${escapeAttr(m.creator)}${roleTitles ? ` · Your ${roleTitles}` : ""}${m.url ? " — click to open" : ""}">
+        <tr class="${rowClass}"${dataHref} title="${escapeAttr(hover)}">
           <td class="c-rank">${rank}</td>
           ${roleCell(mineEntries)}
           <td class="c-name ${sortKey === "name" ? "c-sort-active" : ""}">${escapeHtml(label)}</td>

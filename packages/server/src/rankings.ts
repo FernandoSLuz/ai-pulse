@@ -1,4 +1,5 @@
 import type { CategoryWinners, ModelRecord, RankingsSnapshot } from "./types.js";
+import { collapseVariants } from "./collapse-variants.js";
 import { getMeta, setMeta } from "./db.js";
 import { withModelLinks } from "./model-links.js";
 import { evaluatePollHealth, getLastPollAt } from "./poll-health.js";
@@ -36,12 +37,16 @@ export function buildRankingsSnapshot(
   configuredPollMs = Number(process.env.AA_POLL_INTERVAL_MS) || DEFAULT_POLL_MS,
 ): RankingsSnapshot {
   const sorted = [...models].sort((a, b) => b.intelligence - a.intelligence);
+  const collapsed = collapseVariants(sorted);
+  const visible = collapsed.models;
   const health = evaluatePollHealth(configuredPollMs);
   const updatedAt = getLastPollAt() ?? new Date().toISOString();
   return {
-    models: withModelLinks(sorted),
-    winners: computeWinners(sorted),
+    models: withModelLinks(visible),
+    winners: computeWinners(visible),
     updatedAt,
+    variantAliases: collapsed.variantAliases,
+    variantsCollapsed: collapsed.variantsCollapsed,
     health: {
       stale: health.stale,
       warning: health.warning,
