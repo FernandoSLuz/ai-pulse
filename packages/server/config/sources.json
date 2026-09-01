@@ -6,6 +6,10 @@
     { "url": "https://www.microsoft.com/en-us/research/feed/", "source": "Microsoft Research", "tier": 1 },
     { "url": "https://deepmind.google/blog/rss.xml", "source": "Google DeepMind", "tier": 1 },
     { "url": "https://engineering.fb.com/feed/", "source": "Meta Engineering", "tier": 1 },
+    { "url": "https://mistral.ai/rss.xml", "source": "Mistral", "tier": 1 },
+    { "url": "https://www.cursor.com/changelog/rss.xml", "source": "Cursor", "tier": 1 },
+    { "url": "https://blogs.nvidia.com/blog/category/generative-ai/feed/", "source": "NVIDIA AI", "tier": 1 },
+    { "url": "https://github.com/anthropics/claude-code/releases.atom", "source": "Anthropic (releases)", "tier": 1 },
     { "url": "https://www.marktechpost.com/feed/", "source": "MarkTechPost", "tier": 2 },
     { "url": "https://the-decoder.com/feed/", "source": "The Decoder", "tier": 2 },
     { "url": "https://laxima.tech/signal/feed.xml", "source": "LAXIMA Signal", "tier": 2 },
@@ -13,6 +17,14 @@
     { "url": "https://techcrunch.com/category/artificial-intelligence/feed/", "source": "TechCrunch AI", "tier": 2 },
     { "url": "https://venturebeat.com/category/ai/feed/", "source": "VentureBeat AI", "tier": 2 },
     { "url": "https://arstechnica.com/ai/feed/", "source": "Ars Technica AI", "tier": 2 },
+    { "url": "https://news.google.com/rss/search?q=%22Anthropic%22+OR+%22Claude+AI%22&hl=en-US&gl=US&ceid=US:en", "source": "Anthropic (press)", "tier": 2 },
+    { "url": "https://news.google.com/rss/search?q=%22xAI%22+OR+%22Grok%22&hl=en-US&gl=US&ceid=US:en", "source": "xAI (press)", "tier": 2 },
+    { "url": "https://news.google.com/rss/search?q=%22Meta+AI%22&hl=en-US&gl=US&ceid=US:en", "source": "Meta AI (press)", "tier": 2 },
+    { "url": "https://news.google.com/rss/search?q=%22Z.ai%22+OR+%22Zhipu+AI%22+OR+%22GLM-5%22&hl=en-US&gl=US&ceid=US:en", "source": "Z.ai (press)", "tier": 2 },
+    { "url": "https://news.google.com/rss/search?q=%22Qwen%22+OR+%22Tongyi%22&hl=en-US&gl=US&ceid=US:en", "source": "Qwen (press)", "tier": 2 },
+    { "url": "https://news.google.com/rss/search?q=%22DeepSeek%22&hl=en-US&gl=US&ceid=US:en", "source": "DeepSeek (press)", "tier": 2 },
+    { "url": "https://news.google.com/rss/search?q=%22Perplexity+AI%22&hl=en-US&gl=US&ceid=US:en", "source": "Perplexity (press)", "tier": 2 },
+    { "url": "https://news.google.com/rss/search?q=%22Moonshot+AI%22+OR+%22Kimi+K2%22&hl=en-US&gl=US&ceid=US:en", "source": "Kimi (press)", "tier": 2 },
     { "url": "https://hnrss.org/newest?q=AI+OR+LLM+OR+GPT+OR+Claude", "source": "Hacker News AI", "tier": 3 },
     { "url": "https://www.reddit.com/r/LocalLLaMA/.rss", "source": "r/LocalLLaMA", "tier": 3 }
   ],
@@ -27,5 +39,19 @@
     { "name": "TheAIGRID", "handle": "TheAIGRID", "channelId": "UCbY9xX3_jW5c2fjlZVBI4cg" },
     { "name": "Andrej Karpathy", "handle": "AndrejKarpathy", "channelId": "UCXUPKJO5MZQN11PqgIvyuvQ" },
     { "name": "All About AI", "handle": "AllAboutAI", "channelId": "UCR9j1jqqB5Rse69wjUnbYwA" }
+  ],
+  "companyChannels": [
+    { "name": "OpenAI", "handle": "@OpenAI", "channelId": "UCXZCJLdBC09xxGZ6gcdrc6A" },
+    { "name": "Anthropic", "handle": "@anthropic-ai", "channelId": "UCrDwWp7EBBv4NwvScIpBDOA" },
+    { "name": "Google DeepMind", "handle": "@GoogleDeepMind", "channelId": "UCP7jMXSY2xbc3KCAE0MHQ-A" },
+    { "name": "Meta AI", "handle": "@AIatMeta", "channelId": "UC5qxlwEKM7-5YZudb24l0bg" },
+    { "name": "Cursor", "handle": "@cursor_ai", "channelId": "UC6YYHJzM6PhZ2Yey9BQiUaw" },
+    { "name": "Qwen", "handle": "@QwenLM", "channelId": "UCWeqUXS57KQhmup0wlymlIQ" },
+    { "name": "NVIDIA", "handle": "@NVIDIADeveloper", "channelId": "UCBHcMCGaiJhv-ESTcWGJPcw" },
+    { "name": "Hugging Face", "handle": "@huggingface", "channelId": "UCHlNU7kIZhRgSbhHvFoy72w" },
+    { "name": "xAI / Grok", "handle": "@grok", "channelId": "UCxgo0OMZU9SiaYpJsuZKWkQ" },
+    { "name": "Z.ai", "handle": "@Zai_org", "channelId": "UCyaKbYQdbCUiBSA_OT9mIvg" },
+    { "name": "Mistral", "handle": "@mistral-ai", "channelId": "UCRupI6LjjhbAJfwyHMNPX_g" },
+    { "name": "DeepSeek", "handle": "@deepseek-ai", "channelId": "UCZzz69u3MGBmJ3APUTyyXPA" }
   ]
 }
