@@ -59,6 +59,16 @@ linux:
     entry:
       Name: AI Pulse
       StartupWMClass: ai-pulse
+  # Ship the Omarchy/Hyprland integration (rules, theme hook, bar widget and
+  # the installer) so a packaged install can run it: tray → "Install Omarchy
+  # integration", or `ai-pulse --install-omarchy-integration`.
+  extraResources:
+    - from: linux
+      to: linux
+    - from: ../omarchy-plugin
+      to: omarchy-plugin
+    - from: scripts/linux-install.mjs
+      to: linux/linux-install.mjs
 
 pacman:
   packageName: ai-pulse
@@ -78,6 +88,9 @@ pacman:
     - re2
     - snappy
     - libnotify
+    - libxtst
+    - at-spi2-core
+    - xdg-utils
 
 # Register the aipulse:// deep link (NSIS registry on Windows; MimeType
 # x-scheme-handler/aipulse in the Linux .desktop entry).

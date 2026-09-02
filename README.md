@@ -37,7 +37,7 @@ That's it. AI Pulse now runs in your tray and starts automatically on login (you
 - **AI Analyst** — a briefing on new models, leader changes, and big news.
 - **Ask AI Pulse** — chat with free models plus an automatic web-search agent.
 - **My Stack** — track your current model and get upgrade suggestions when something better lands.
-- **Desktop leaderboard** — an always-on ranking widget docked to your screen edge (always-on-top on Windows; on Hyprland a shipped window rule floats and pins it and the app reserves its strip so other windows tile beside it).
+- **Desktop leaderboard** — an always-on ranking widget docked to your screen edge (always-on-top on Windows; on Hyprland a shipped window rule floats and pins it and the app adds workspace gaps so other windows tile beside it).
 - **Notifications** — desktop notifications (Windows toasts; `notify-send`/libnotify on Linux) for new models, leader changes, and upgrade suggestions.
 - **Omarchy integration** — on Omarchy the dashboard and leaderboard follow your active theme, and a bar widget shows the current leader.
 

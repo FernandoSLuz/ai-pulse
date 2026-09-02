@@ -30,3 +30,8 @@ o.window({ class = "^ai-pulse$", title = "^AI Pulse$" }, {
   center = true,
   size = { 860, 720 },
 })
+
+-- Dock gaps: while the leaderboard is visible, AI Pulse writes
+-- ~/.config/hypr/ai-pulse-dock.lua with per-workspace gaps_out rules for the
+-- monitor it sits on, so tiled windows stay clear of it (the bar is untouched).
+pcall(require, "hypr.ai-pulse-dock")

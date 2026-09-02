@@ -14,20 +14,25 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const widgetDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const repoRoot = path.resolve(widgetDir, "..", "..");
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+// Packaged app: electron-builder ships us as resources/linux/linux-install.mjs
+// next to hypr/ and hooks/, with the plugin at resources/omarchy-plugin/.
+// Source checkout: packages/widget/scripts/ next to ../linux and ../../omarchy-plugin.
+const packaged = fs.existsSync(path.join(scriptDir, "hypr", "ai-pulse.lua"));
+const linuxDir = packaged ? scriptDir : path.resolve(scriptDir, "..", "linux");
+const pluginRoot = packaged ? path.resolve(scriptDir, "..", "omarchy-plugin") : path.resolve(scriptDir, "..", "..", "omarchy-plugin");
 const home = os.homedir();
 const cfg = process.env.XDG_CONFIG_HOME || path.join(home, ".config");
 const uninstall = process.argv.includes("--uninstall");
 
-const HYPR_RULES_SRC = path.join(widgetDir, "linux", "hypr", "ai-pulse.lua");
+const HYPR_RULES_SRC = path.join(linuxDir, "hypr", "ai-pulse.lua");
 const HYPR_RULES_DST = path.join(cfg, "hypr", "ai-pulse.lua");
 const HYPRLAND_LUA = path.join(cfg, "hypr", "hyprland.lua");
 const REQUIRE_LINE = 'require("hypr.ai-pulse")';
-const HOOK_SRC = path.join(widgetDir, "linux", "hooks", "ai-pulse-theme-set");
+const HOOK_SRC = path.join(linuxDir, "hooks", "ai-pulse-theme-set");
 const HOOK_DST = path.join(cfg, "omarchy", "hooks", "theme-set.d", "ai-pulse-theme-set");
 const PLUGIN_ID = "fernando.ai-pulse";
-const PLUGIN_SRC = path.join(repoRoot, "packages", "omarchy-plugin", PLUGIN_ID);
+const PLUGIN_SRC = path.join(pluginRoot, PLUGIN_ID);
 const PLUGIN_DST = path.join(cfg, "omarchy", "plugins", PLUGIN_ID);
 
 const stamp = new Date().toISOString().replace(/[-:]/g, "").slice(0, 15);
@@ -116,9 +121,10 @@ function installPlugin() {
     return;
   }
   fs.mkdirSync(path.dirname(PLUGIN_DST), { recursive: true });
-  // Symlink for a source checkout (edits hot-reload in the shell); copy otherwise.
+  // Symlink for a source checkout (edits hot-reload in the shell); copy for a
+  // packaged app, whose resources move on every update.
   if (fs.existsSync(PLUGIN_DST)) fs.rmSync(PLUGIN_DST, { recursive: true, force: true });
-  if (process.env.AI_PULSE_PLUGIN_COPY) fs.cpSync(PLUGIN_SRC, PLUGIN_DST, { recursive: true });
+  if (packaged || process.env.AI_PULSE_PLUGIN_COPY) fs.cpSync(PLUGIN_SRC, PLUGIN_DST, { recursive: true });
   else fs.symlinkSync(PLUGIN_SRC, PLUGIN_DST, "dir");
   log(`plugin: ${PLUGIN_DST}`);
   if (have("omarchy")) {
@@ -152,7 +158,9 @@ try {
     installHyprRules();
     installHook();
     installPlugin();
-    log("done. Start AI Pulse (npm run widget) — it registers its .desktop entry and the aipulse:// handler on launch.");
+    log(packaged
+      ? "done. AI Pulse registers its .desktop entry and the aipulse:// handler on every launch."
+      : "done. Start AI Pulse (npm run widget) — it registers its .desktop entry and the aipulse:// handler on launch.");
   }
 } catch (err) {
   console.error(`[linux-install] ${err.message}`);

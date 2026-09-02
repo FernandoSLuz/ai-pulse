@@ -63,9 +63,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // keys from its own config.json instead and never ships a .env.
 const ENV_CANDIDATES = [
   process.env.AI_PULSE_ENV_FILE,
-  process.env.AI_PULSE_RESOURCE_DIR ? path.join(process.env.AI_PULSE_RESOURCE_DIR, ".env") : undefined,
-  path.join(process.cwd(), ".env"),
-  path.join(__dirname, "..", "..", "..", ".env"), // packages/server/{src,dist} -> repo root
+  // Standalone/dev runs only: the desktop app always sets AI_PULSE_RESOURCE_DIR
+  // and injects keys from its own config.json instead of any .env on disk.
+  ...(process.env.AI_PULSE_RESOURCE_DIR
+    ? []
+    : [path.join(process.cwd(), ".env"), path.join(__dirname, "..", "..", "..", ".env")]), // packages/server/{src,dist} -> repo root
 ].filter((p): p is string => Boolean(p));
 for (const candidate of ENV_CANDIDATES) {
   if (!fs.existsSync(candidate)) continue;
@@ -121,12 +123,29 @@ initTheme();
 onThemeChange((theme) => broadcast({ type: "theme", payload: { name: theme.name, version: theme.version, available: theme.available } }));
 
 const app = express();
-app.use(cors({ origin: [`http://localhost:${PORT}`, `http://127.0.0.1:${PORT}`] }));
+const ALLOWED_ORIGINS = new Set([`http://localhost:${PORT}`, `http://127.0.0.1:${PORT}`]);
+app.use(cors({ origin: [...ALLOWED_ORIGINS] }));
+// CORS only governs reads; a cross-site page can still fire simple POSTs at
+// loopback. Reject mutating requests whose Origin is not ours (non-browser
+// clients such as curl or the bar widget send no Origin and pass).
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (req.method !== "GET" && req.method !== "HEAD" && req.method !== "OPTIONS" && origin && !ALLOWED_ORIGINS.has(origin)) {
+    res.status(403).json({ error: "cross-origin request rejected" });
+    return;
+  }
+  next();
+});
 app.use(express.json());
 app.use(express.static(webRoot));
 
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server, path: "/ws" });
+const wss = new WebSocketServer({
+  server,
+  path: "/ws",
+  // Same rule for the socket upgrade: browsers always send Origin on WS.
+  verifyClient: (info: { origin: string }) => !info.origin || ALLOWED_ORIGINS.has(info.origin),
+});
 
 const clients = new Set<WebSocket>();
 
@@ -151,8 +170,9 @@ wss.on("connection", (ws) => {
 // Omarchy theme bridge: the dashboard and the leaderboard link /theme.css after
 // their own stylesheet; it is empty when no Omarchy palette is available.
 app.get("/theme.css", (_req, res) => {
-  const theme = getTheme();
-  res.type("text/css").set("Cache-Control", "no-cache").set("ETag", `"theme-${theme.version}"`).send(theme.css);
+  // Express derives the ETag from the body, so a palette swapped while the
+  // server was down never revalidates as "unchanged".
+  res.type("text/css").set("Cache-Control", "no-cache").send(getTheme().css);
 });
 app.get("/api/theme", (_req, res) => {
   const { css: _css, ...info } = getTheme();

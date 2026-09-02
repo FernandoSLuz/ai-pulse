@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Tray, Menu, screen, nativeImage, shell, ipcMain } from "electron";
+import { app, BrowserWindow, Tray, Menu, Notification, screen, nativeImage, shell, ipcMain } from "electron";
 import path from "node:path";
 import { ServerSupervisor, type ServerStatus } from "./src/supervisor";
 import {
@@ -20,6 +20,7 @@ import {
   hyprlandDock,
   hyprlandReserve,
   hyprlandRelease,
+  runOmarchyInstaller,
 } from "./src/platform";
 
 // Set the app name before anything reads app.getPath("userData"), so config,
@@ -96,7 +97,7 @@ function scheduleHyprlandDock(): void {
     // Position first, then reserve the strip so tiled windows tile beside the
     // widget instead of underneath it (a real side dock).
     void hyprlandDock(LEADERBOARD_TITLE, WIDGET_WIDTH, config.leaderboard.dockSide, TOP_MARGIN).then(() =>
-      hyprlandReserve(LEADERBOARD_TITLE, WIDGET_WIDTH, config.leaderboard.dockSide),
+      hyprlandReserve(LEADERBOARD_TITLE, WIDGET_WIDTH, config.leaderboard.dockSide, TOP_MARGIN),
     );
   }, 150);
 }
@@ -148,7 +149,7 @@ function createLeaderboardWindow(): void {
   });
   leaderboardWindow.on("closed", () => {
     leaderboardWindow = null;
-    if (isLinux) void hyprlandRelease(WIDGET_WIDTH);
+    if (isLinux) void hyprlandRelease();
   });
 }
 
@@ -276,6 +277,21 @@ function buildTrayMenu(): Menu {
       checked: config.autoLaunch,
       click: (item) => setAutoLaunch(item.checked),
     },
+    ...(isLinux
+      ? [
+          {
+            label: "Install Omarchy integration…",
+            click: () =>
+              void runOmarchyInstaller().then((r) => {
+                console.log(`[Omarchy] installer ${r.ok ? "ok" : "failed"}\n${r.output}`);
+                new Notification({
+                  title: r.ok ? "AI Pulse: Omarchy integration installed" : "AI Pulse: integration failed",
+                  body: r.ok ? "Hyprland rules, theme hook and bar widget are in place." : r.output.split("\n").slice(-2).join(" "),
+                }).show();
+              }),
+          },
+        ]
+      : []),
     { type: "separator" },
     { label: "Quit AI Pulse", click: () => void quitAll() },
   ]);
@@ -317,7 +333,7 @@ async function quitAll(): Promise<void> {
   } catch {
     /* best effort */
   }
-  if (isLinux) await hyprlandRelease(WIDGET_WIDTH).catch(() => undefined);
+  if (isLinux) await hyprlandRelease().catch(() => undefined);
   leaderboardWindow?.destroy();
   settingsWindow?.destroy();
   tray?.destroy();
@@ -496,9 +512,19 @@ function registerProtocol(): void {
   }
 }
 
-const gotLock = app.requestSingleInstanceLock();
+// `ai-pulse --install-omarchy-integration [--uninstall]`: run the shipped
+// installer and exit, without touching the running instance.
+if (isLinux && process.argv.includes("--install-omarchy-integration")) {
+  app.whenReady().then(async () => {
+    const r = await runOmarchyInstaller(process.argv.includes("--uninstall"));
+    process.stdout.write(`${r.output}\n`);
+    app.exit(r.ok ? 0 : 1);
+  });
+}
+
+const gotLock = process.argv.includes("--install-omarchy-integration") ? false : app.requestSingleInstanceLock();
 if (!gotLock) {
-  app.quit();
+  if (!process.argv.includes("--install-omarchy-integration")) app.quit();
 } else {
   app.on("second-instance", (_e, argv) => {
     handleProtocolArgv(argv);
@@ -531,7 +557,7 @@ if (!gotLock) {
 
     createTray();
     // A crashed previous instance may have left its dock reservation behind.
-    if (isLinux) void hyprlandRelease(WIDGET_WIDTH);
+    if (isLinux) void hyprlandRelease();
     supervisor.start();
 
     // Apply auto-launch registration to match saved config on every start

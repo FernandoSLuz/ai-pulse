@@ -47,7 +47,7 @@ const HEX = /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/;
 export function parseColorsToml(text: string): Record<string, string> {
   const colors: Record<string, string> = {};
   for (const raw of text.split(/\r?\n/)) {
-    const line = raw.replace(/#(?![0-9a-fA-F]{6}\b).*$/, "").trim(); // strip comments, keep #hex
+    const line = raw.replace(/(^|\s)#(?![0-9a-fA-F]{6,8}\b).*$/, "$1").trim(); // strip comments, keep #hex/#hexaa
     const m = /^([A-Za-z0-9_]+)\s*=\s*"?([^"\s]+)"?\s*$/.exec(line);
     if (!m) continue;
     if (HEX.test(m[2])) colors[m[1]] = m[2].toLowerCase();
