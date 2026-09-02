@@ -1,4 +1,5 @@
 import { app } from "electron";
+import dotenv from "dotenv";
 import fs from "node:fs";
 import path from "node:path";
 import { configPath, dataDir, serverBundleDir, legacyConfigPaths } from "./paths";
@@ -100,7 +101,38 @@ export function loadConfig(): AppConfig {
       /* try the next candidate */
     }
   }
-  return { ...DEFAULT_CONFIG, keys: {} };
+
+  // First run from a source checkout: adopt the developer .env so the app is
+  // useful immediately. Packaged builds never look at a .env.
+  const seeded = seedKeysFromDotenv();
+  const fresh: AppConfig = { ...DEFAULT_CONFIG, keys: seeded };
+  if (Object.keys(seeded).length > 0) saveConfig(fresh);
+  return fresh;
+}
+
+/** Keys from the repo-root .env (dev only); empty when packaged or absent. */
+function seedKeysFromDotenv(): Partial<Record<LlmKeyName, string>> {
+  if (app.isPackaged) return {};
+  const candidates = [
+    process.env.AI_PULSE_ENV_FILE,
+    path.resolve(__dirname, "..", "..", "..", "..", ".env"), // dist/src -> packages/widget -> packages -> repo
+  ].filter((p): p is string => Boolean(p));
+  for (const candidate of candidates) {
+    try {
+      if (!fs.existsSync(candidate)) continue;
+      const parsed = dotenv.parse(fs.readFileSync(candidate, "utf8"));
+      const keys: Partial<Record<LlmKeyName, string>> = {};
+      for (const name of LLM_KEY_NAMES) {
+        const value = parsed[name]?.trim();
+        if (value) keys[name] = value;
+      }
+      console.log(`[Config] Seeded ${Object.keys(keys).length} key(s) from ${candidate}`);
+      return keys;
+    } catch (err) {
+      console.warn(`[Config] Could not read ${candidate}:`, (err as Error).message);
+    }
+  }
+  return {};
 }
 
 /** Atomic write with a rolling backup so a crash mid-save can't lose keys. */
