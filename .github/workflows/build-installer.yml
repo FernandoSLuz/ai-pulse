@@ -1,65 +1,53 @@
 name: Build Installer (debug)
 
-# On-demand installer build for iterating on packaging without cutting releases.
+# On-demand packaging build for iterating on the installers without cutting
+# releases. Produces the NSIS .exe on Windows and AppImage + pacman on Linux.
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
+
+      - name: Install packaging tools (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libarchive-tools
 
       - name: Install
         run: npm ci
 
-      - name: Rebuild better-sqlite3 for Electron (at root, where npm works)
-        shell: bash
-        env:
-          npm_config_runtime: electron
-          npm_config_target: "33.4.11"
-          npm_config_dist_url: https://electronjs.org/headers
-          npm_config_arch: x64
-        run: npm rebuild better-sqlite3 --foreground-scripts
+      - name: Fetch the Electron binary
+        run: npx install-electron
 
-      - name: Verify better-sqlite3 loads under Electron ABI (source)
-        shell: bash
-        run: ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron.exe -e "new (require('better-sqlite3'))(':memory:').close(); console.log('SRC OK');"
-
-      - name: Build unpacked app (no installer yet)
+      - name: Build and package
         shell: bash
         run: |
           npm run build -w @ai-pulse/widget
-          cd packages/widget && npx electron-builder --win --dir --publish never
+          cd packages/widget
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            npx electron-builder --win --publish never
+          else
+            npx electron-builder --linux AppImage pacman --publish never
+          fi
+          ls -la release
 
-      - name: Copy Electron-ABI better-sqlite3 into the packed app
-        shell: bash
-        run: |
-          SRC="node_modules/better-sqlite3/build/Release/better_sqlite3.node"
-          DST="packages/widget/release/win-unpacked/resources/app/node_modules/better-sqlite3/build/Release/better_sqlite3.node"
-          cp -f "$SRC" "$DST"
-          echo "copied $(ls -la "$DST")"
-
-      - name: Verify better-sqlite3 loads under Electron ABI (packaged)
-        shell: bash
-        run: |
-          REL="packages/widget/release/win-unpacked/resources/app/node_modules/better-sqlite3"
-          P="$(pwd -W)/$REL"
-          ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron.exe -e "const D=require('$P'); new D(':memory:').close(); console.log('PKG better-sqlite3 OK under Electron ABI');"
-
-      - name: Package installer (NSIS) from the fixed app dir
-        shell: bash
-        run: |
-          cd packages/widget && npx electron-builder --win --prepackaged release/win-unpacked --publish never
-
-      - name: Upload installer artifact
-        if: always()
+      - name: Upload installers
         uses: actions/upload-artifact@v4
         with:
-          name: ai-pulse-installer
-          path: packages/widget/release/*.exe
-          if-no-files-found: warn
+          name: ai-pulse-${{ matrix.os }}
+          path: |
+            packages/widget/release/*.exe
+            packages/widget/release/*.AppImage
+            packages/widget/release/*.pacman
+            packages/widget/release/latest*.yml
+          if-no-files-found: error

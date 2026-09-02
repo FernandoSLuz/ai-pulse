@@ -9,7 +9,12 @@
     "dev": "npm run dev -w @ai-pulse/server",
     "start": "npm run start -w @ai-pulse/server",
     "app": "npm run build && npm run start -w @ai-pulse/widget",
-    "widget": "npm run start -w @ai-pulse/widget"
+    "widget": "npm run start -w @ai-pulse/widget",
+    "dist:linux": "npm run dist:linux -w @ai-pulse/widget",
+    "gate": "npm run build && node --check packages/web/app.js && node --check packages/widget/renderer/settings.js"
   },
-  "version": "1.0.0-rc.5"
+  "version": "1.0.0-rc.5",
+  "engines": {
+    "node": ">=22.14"
+  }
 }

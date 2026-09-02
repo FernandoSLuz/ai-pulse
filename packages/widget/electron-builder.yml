@@ -5,7 +5,7 @@ copyright: © 2026 Fernando Luz
 # electron is hoisted to the repo-root node_modules by npm workspaces, so
 # electron-builder (run from packages/widget) can't auto-detect the version.
 # Pin it explicitly; electron-builder fetches the matching dist for packaging.
-electronVersion: 33.4.11
+electronVersion: 43.5.1
 
 directories:
   output: release
@@ -20,9 +20,8 @@ files:
   - package.json
   - "!**/*.map"
 
-# Native modules are rebuilt for Electron by a CI step (@electron/rebuild) BEFORE
-# packaging. electron-builder's own rebuild spawns with cwd=<appDir>/node_modules,
-# which doesn't exist under npm-workspace hoisting, so we disable it here.
+# better-sqlite3 >= 13 is a Node-API addon whose prebuilt binary loads under
+# Node and Electron alike, so no per-runtime rebuild is needed anywhere.
 npmRebuild: false
 nodeGypRebuild: false
 
@@ -44,13 +43,50 @@ nsis:
   # Never wipe userData (config.json with API keys) on uninstall/update.
   deleteAppDataOnUninstall: false
 
-# Register the aipulse:// deep link so the web dashboard can open the app.
+linux:
+  target:
+    - AppImage
+    - pacman
+  # Also the .desktop file name and StartupWMClass; must match the
+  # app.setDesktopName("ai-pulse.desktop") call in main.ts (Wayland app_id).
+  executableName: ai-pulse
+  icon: build/icon.png
+  category: Utility
+  synopsis: Your personal AI model radar
+  # No spaces: the artifact path ends up in Exec= lines and shell commands.
+  artifactName: ai-pulse-${version}.${ext}
+  desktop:
+    entry:
+      Name: AI Pulse
+      StartupWMClass: ai-pulse
+
+pacman:
+  packageName: ai-pulse
+  # electron-builder's defaults include libappindicator-gtk3 and http-parser,
+  # which do not exist in the Arch repositories; Electron >= 22 speaks
+  # StatusNotifierItem over D-Bus directly and needs no appindicator library.
+  depends:
+    - c-ares
+    - ffmpeg
+    - gtk3
+    - libevent
+    - libvpx
+    - libxslt
+    - libxss
+    - minizip
+    - nss
+    - re2
+    - snappy
+    - libnotify
+
+# Register the aipulse:// deep link (NSIS registry on Windows; MimeType
+# x-scheme-handler/aipulse in the Linux .desktop entry).
 protocols:
   - name: AI Pulse
     schemes:
       - aipulse
 
-# Update feed for electron-updater (generates latest.yml / app-update.yml).
+# Update feed for electron-updater (latest.yml on Windows, latest-linux.yml on Linux).
 publish:
   provider: github
   owner: FernandoSLuz

@@ -15,11 +15,23 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install
         run: npm ci
+
+      # Electron >= 42 no longer downloads its binary in postinstall.
+      - name: Fetch the Electron binary
+        run: npx install-electron
+
+      # better-sqlite3 >= 13 is a Node-API 10 addon: one prebuilt binary serves
+      # Node and Electron, provided the host exposes Node-API >= 10.
+      - name: Smoke-test better-sqlite3 under Node and Electron
+        run: |
+          node -e "if (+process.versions.napi < 10) { console.error('Node-API', process.versions.napi, '< 10'); process.exit(1) }"
+          node -e "new (require('better-sqlite3'))(':memory:').close(); console.log('better-sqlite3 OK under node', process.versions.node)"
+          ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron -e "new (require('better-sqlite3'))(':memory:').close(); console.log('better-sqlite3 OK under electron', process.versions.electron, 'node', process.versions.node)"
 
       - name: Build server (tsc)
         run: npm run build -w @ai-pulse/server
@@ -48,3 +60,7 @@ jobs:
             sleep 1
           done
           echo "server did not become healthy"; kill $SERVER_PID; exit 1
+
+      # Catches a broken linux: block in electron-builder.yml without cutting a release.
+      - name: Package the Linux app dir (no installer)
+        run: cd packages/widget && npx electron-builder --linux --dir --publish never

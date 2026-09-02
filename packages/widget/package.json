@@ -1,27 +1,33 @@
 {
   "name": "@ai-pulse/widget",
   "version": "1.0.0-rc.5",
+  "productName": "AI Pulse",
+  "desktopName": "ai-pulse.desktop",
   "private": true,
   "description": "AI Pulse desktop app — tray, server supervisor, settings, and the leaderboard widget.",
   "main": "dist/main.js",
   "scripts": {
     "build": "tsc && node scripts/build-resources.mjs",
-    "start": "electron dist/main.js",
-    "dev": "npm run build && electron dist/main.js",
+    "icons": "node scripts/make-icons.mjs",
+    "start": "electron .",
+    "dev": "npm run build && electron .",
     "dist": "npm run build && electron-builder --win",
     "dist:ci": "npm run build && electron-builder --win --publish never",
-    "dist:dir": "npm run build && electron-builder --win --dir"
+    "dist:dir": "npm run build && electron-builder --win --dir",
+    "dist:linux": "npm run build && electron-builder --linux",
+    "dist:linux:ci": "npm run build && electron-builder --linux --publish never",
+    "dist:linux:dir": "npm run build && electron-builder --linux --dir"
   },
   "dependencies": {
-    "better-sqlite3": "^11.8.1",
-    "electron-updater": "^6.3.9",
+    "better-sqlite3": "^13.0.3",
+    "dotenv": "^16.4.7",
+    "electron-updater": "^6.8.9",
     "node-notifier": "^10.0.1"
   },
   "devDependencies": {
-    "@electron/rebuild": "^3.7.0",
-    "@types/node": "^22.10.5",
-    "electron": "^33.2.1",
-    "electron-builder": "^25.1.8",
+    "@types/node": "^24.0.0",
+    "electron": "43.5.1",
+    "electron-builder": "^26.15.7",
     "esbuild": "^0.28.1",
     "typescript": "^5.7.2"
   }

@@ -1,6 +1,6 @@
 // Assembles everything the Electron app needs at runtime into dist/:
 //   dist/assets, dist/renderer  — app UI resources
-//   dist/server/index.cjs       — the server, bundled by esbuild
+//   dist/server/index.mjs       — the server, bundled by esbuild
 //   dist/server/{config,assets,web} — server runtime resources
 //
 // The server is bundled to a single CJS file with the native/vendored modules
@@ -31,7 +31,7 @@ await build({
   bundle: true,
   platform: "node",
   format: "esm", // keeps import.meta.url working; externals interop as CJS
-  target: "node20",
+  target: "node22",
   outfile: path.join(serverOut, "index.mjs"),
   external: ["better-sqlite3", "node-notifier"],
   // Provide a real `require` so bundled CJS deps (dotenv, etc.) can require
