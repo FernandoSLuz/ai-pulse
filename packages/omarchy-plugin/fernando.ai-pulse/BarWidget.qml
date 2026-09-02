@@ -78,7 +78,7 @@ BarWidget {
       var top = list.length > 0 ? list[0] : null
       leader = top ? String(top.name || top.slug || "") : ""
       var score = top && top.intelligence !== undefined && top.intelligence !== null ? top.intelligence : null
-      leaderScore = score !== null ? "int " + score : ""
+      leaderScore = score !== null ? "int " + (Math.round(Number(score) * 10) / 10) : ""
     } catch (e) {
       leader = ""
       leaderScore = ""

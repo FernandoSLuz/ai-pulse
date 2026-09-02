@@ -91,9 +91,11 @@ function applyLeaderboardBounds(height: number): void {
 let dockTimer: NodeJS.Timeout | null = null;
 
 function scheduleHyprlandDock(): void {
+  if (shutdownStarted) return; // never re-dock/re-reserve while tearing down
   if (dockTimer) clearTimeout(dockTimer);
   dockTimer = setTimeout(() => {
     dockTimer = null;
+    if (shutdownStarted || !leaderboardWindow) return;
     // Position first, then reserve the strip so tiled windows tile beside the
     // widget instead of underneath it (a real side dock).
     void hyprlandDock(LEADERBOARD_TITLE, WIDGET_WIDTH, config.leaderboard.dockSide, TOP_MARGIN).then(() =>
@@ -259,9 +261,11 @@ function buildTrayMenu(): Menu {
             ? "Restart to install update"
             : "Check for updates",
       click: () => {
-        if (updater.state.status === "downloaded") updater.install();
-        else updater.check();
-        createSettingsWindow();
+        if (updater.state.status === "downloaded") void installUpdate();
+        else {
+          updater.check();
+          createSettingsWindow();
+        }
       },
     },
     { type: "separator" },
@@ -298,7 +302,7 @@ function buildTrayMenu(): Menu {
 }
 
 function refreshTrayMenu(): void {
-  tray?.setContextMenu(buildTrayMenu());
+  if (tray && !tray.isDestroyed()) tray.setContextMenu(buildTrayMenu());
 }
 
 function createTray(): void {
@@ -321,12 +325,28 @@ function setAutoLaunch(enabled: boolean): void {
 
 // --- Quit-all ---------------------------------------------------------------
 
-let shutdownStarted = false;
+/**
+ * electron-updater spawns the new build and then quits us; tear down first so
+ * the server port, the dock gaps and the single-instance lock are free by the
+ * time the updated app starts (a before-quit preventDefault would otherwise
+ * make the relaunched instance lose the lock and exit).
+ */
+async function installUpdate(): Promise<void> {
+  if (updater.state.status !== "downloaded") return;
+  await teardown();
+  updater.install();
+}
 
-async function quitAll(): Promise<void> {
+let shutdownStarted = false;
+let shutdownDone = false;
+
+/** Stop everything we own (server, dock gaps, windows, tray) without quitting. */
+async function teardown(): Promise<void> {
   if (shutdownStarted) return;
   shutdownStarted = true;
   isQuitting = true;
+  if (dockTimer) clearTimeout(dockTimer);
+  dockTimer = null;
   refreshTrayMenu();
   try {
     await supervisor.shutdown();
@@ -335,8 +355,16 @@ async function quitAll(): Promise<void> {
   }
   if (isLinux) await hyprlandRelease().catch(() => undefined);
   leaderboardWindow?.destroy();
+  leaderboardWindow = null;
   settingsWindow?.destroy();
+  settingsWindow = null;
   tray?.destroy();
+  tray = null;
+  shutdownDone = true;
+}
+
+async function quitAll(): Promise<void> {
+  await teardown();
   app.quit();
 }
 
@@ -422,7 +450,7 @@ function registerIpc(): void {
 
   ipcMain.handle("update:check", () => (updater.check(), updater.state));
   ipcMain.handle("update:download", () => (updater.download(), updater.state));
-  ipcMain.handle("update:install", () => updater.install());
+  ipcMain.handle("update:install", () => void installUpdate());
   ipcMain.handle("update:status", () => updater.state);
 
   ipcMain.handle("app:openDashboard", () => void shell.openExternal(dashboardUrl()));
@@ -513,18 +541,25 @@ function registerProtocol(): void {
 }
 
 // `ai-pulse --install-omarchy-integration [--uninstall]`: run the shipped
-// installer and exit, without touching the running instance.
-if (isLinux && process.argv.includes("--install-omarchy-integration")) {
+// installer and exit, without touching the running instance (Linux only;
+// elsewhere the flag is meaningless and the process just exits).
+const installerMode = process.argv.includes("--install-omarchy-integration");
+if (installerMode) {
   app.whenReady().then(async () => {
+    if (!isLinux) {
+      process.stderr.write("--install-omarchy-integration is only available on Linux\n");
+      app.exit(2);
+      return;
+    }
     const r = await runOmarchyInstaller(process.argv.includes("--uninstall"));
     process.stdout.write(`${r.output}\n`);
     app.exit(r.ok ? 0 : 1);
   });
 }
 
-const gotLock = process.argv.includes("--install-omarchy-integration") ? false : app.requestSingleInstanceLock();
+const gotLock = installerMode ? false : app.requestSingleInstanceLock();
 if (!gotLock) {
-  if (!process.argv.includes("--install-omarchy-integration")) app.quit();
+  if (!installerMode) app.quit();
 } else {
   app.on("second-instance", (_e, argv) => {
     handleProtocolArgv(argv);
@@ -577,8 +612,8 @@ if (!gotLock) {
   // quitAll so the supervised server and the Hyprland reservation go with us.
   app.on("before-quit", (e) => {
     isQuitting = true;
-    if (shutdownStarted) return; // quitAll() finished and is calling app.quit()
-    e.preventDefault();
+    if (shutdownDone) return; // teardown finished; let this quit proceed
+    e.preventDefault(); // first quit starts the teardown, later ones wait for it
     void quitAll();
   });
   for (const signal of ["SIGTERM", "SIGINT"] as const) {

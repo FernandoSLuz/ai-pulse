@@ -66,7 +66,7 @@ function installHyprRules() {
     return;
   }
   const current = fs.readFileSync(HYPRLAND_LUA, "utf8");
-  if (current.split("\n").some((l) => l.trim() === REQUIRE_LINE)) {
+  if (current.split("\n").some((l) => l.trim().startsWith(REQUIRE_LINE))) {
     log("hyprland.lua already requires hypr.ai-pulse");
   } else {
     backup(HYPRLAND_LUA);
@@ -105,8 +105,8 @@ function uninstallHyprRules() {
 }
 
 function installHook() {
-  if (have("omarchy")) {
-    run("omarchy", ["hook", "install", "theme-set", HOOK_SRC]);
+  if (have("omarchy") && run("omarchy", ["hook", "install", "theme-set", HOOK_SRC], { optional: true })) {
+    /* installed through omarchy */
   } else {
     fs.mkdirSync(path.dirname(HOOK_DST), { recursive: true });
     fs.copyFileSync(HOOK_SRC, HOOK_DST);
@@ -123,7 +123,13 @@ function installPlugin() {
   fs.mkdirSync(path.dirname(PLUGIN_DST), { recursive: true });
   // Symlink for a source checkout (edits hot-reload in the shell); copy for a
   // packaged app, whose resources move on every update.
-  if (fs.existsSync(PLUGIN_DST)) fs.rmSync(PLUGIN_DST, { recursive: true, force: true });
+  // lstat, not existsSync: a dangling symlink from a moved checkout must go too.
+  try {
+    fs.lstatSync(PLUGIN_DST);
+    fs.rmSync(PLUGIN_DST, { recursive: true, force: true });
+  } catch {
+    /* nothing there */
+  }
   if (packaged || process.env.AI_PULSE_PLUGIN_COPY) fs.cpSync(PLUGIN_SRC, PLUGIN_DST, { recursive: true });
   else fs.symlinkSync(PLUGIN_SRC, PLUGIN_DST, "dir");
   log(`plugin: ${PLUGIN_DST}`);

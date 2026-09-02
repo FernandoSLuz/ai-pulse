@@ -234,17 +234,6 @@ interface HyprMonitorFull extends HyprMonitor {
   name: string;
 }
 
-interface HyprWorkspaceRule {
-  workspaceString: string;
-  monitor?: string;
-}
-
-interface HyprWorkspace {
-  id: number;
-  name: string;
-  monitor: string;
-}
-
 function hyprctlText(args: string[]): Promise<string> {
   return new Promise((resolve) => execFile("hyprctl", args, { timeout: 5000 }, (_err, out) => resolve(String(out ?? ""))));
 }
@@ -267,16 +256,6 @@ async function defaultGaps(): Promise<[number, number, number, number]> {
     /* fall through */
   }
   return [10, 10, 10, 10];
-}
-
-/** Workspaces bound to a monitor: rule-bound ids plus whatever lives there right now. */
-async function workspacesOnMonitor(monitor: string): Promise<string[]> {
-  const ids = new Set<string>();
-  const rules = await hyprctlJson<HyprWorkspaceRule[]>(["workspacerules"]);
-  for (const r of rules ?? []) if (r.monitor === monitor && /^\d+$/.test(r.workspaceString)) ids.add(r.workspaceString);
-  const live = await hyprctlJson<HyprWorkspace[]>(["workspaces"]);
-  for (const w of live ?? []) if (w.monitor === monitor && w.id > 0) ids.add(String(w.id));
-  return [...ids].sort((a, b) => Number(a) - Number(b));
 }
 
 /** Write the dock rule file only when its content changes, then reload Hyprland's config. */
@@ -311,17 +290,13 @@ export async function hyprlandReserve(title: string, width: number, side: "left"
   const monitors = await hyprctlJson<HyprMonitorFull[]>(["monitors"]);
   const mon = win && monitors?.find((m) => m.id === win.monitor);
   if (!mon) return;
-  const ids = await workspacesOnMonitor(mon.name);
-  if (ids.length === 0) return;
   const [top, right, bottom, left] = await defaultGaps();
-  const rules = ids
-    .map((id) => {
-      const r = side === "right" ? right + width + gap : right;
-      const l = side === "left" ? left + width + gap : left;
-      return `hl.workspace_rule({ workspace = "${id}", gaps_out = { top = ${top}, right = ${r}, bottom = ${bottom}, left = ${l} } })`;
-    })
-    .join("\n");
-  await writeDockFile(`${DOCK_FILE_HEADER}-- Leaderboard docked ${side} on ${mon.name}: tiled windows keep clear of its ${width}px strip.\n${rules}\n`);
+  const r = side === "right" ? right + width + gap : right;
+  const l = side === "left" ? left + width + gap : left;
+  // One monitor selector covers every workspace on it, including ones created
+  // later (verified on Hyprland 0.56: `workspace = "m[DP-3]"` applies on reload).
+  const rule = `hl.workspace_rule({ workspace = "m[${mon.name}]", gaps_out = { top = ${top}, right = ${r}, bottom = ${bottom}, left = ${l} } })`;
+  await writeDockFile(`${DOCK_FILE_HEADER}-- Leaderboard docked ${side} on ${mon.name}: tiled windows keep clear of its ${width}px strip.\n${rule}\n`);
 }
 
 /** Drop the dock gaps (leaderboard hidden or app quitting / starting after a crash). */

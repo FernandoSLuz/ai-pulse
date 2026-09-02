@@ -106,7 +106,13 @@ export function loadConfig(): AppConfig {
   // useful immediately. Packaged builds never look at a .env.
   const seeded = seedKeysFromDotenv();
   const fresh: AppConfig = { ...DEFAULT_CONFIG, keys: seeded };
-  if (Object.keys(seeded).length > 0) saveConfig(fresh);
+  if (Object.keys(seeded).length > 0) {
+    try {
+      saveConfig(fresh);
+    } catch (err) {
+      console.warn("[Config] Could not persist seeded keys:", (err as Error).message);
+    }
+  }
   return fresh;
 }
 
