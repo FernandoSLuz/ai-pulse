@@ -5,6 +5,11 @@
   "desktopName": "ai-pulse.desktop",
   "private": true,
   "description": "AI Pulse desktop app — tray, server supervisor, settings, and the leaderboard widget.",
+  "homepage": "https://github.com/FernandoSLuz/ai-pulse",
+  "author": {
+    "name": "Fernando Silva da Luz",
+    "email": "fernandosilvadaluz@gmail.com"
+  },
   "main": "dist/main.js",
   "scripts": {
     "build": "tsc && node scripts/build-resources.mjs",
