@@ -305,7 +305,11 @@ function setAutoLaunch(enabled: boolean): void {
 
 // --- Quit-all ---------------------------------------------------------------
 
+let shutdownStarted = false;
+
 async function quitAll(): Promise<void> {
+  if (shutdownStarted) return;
+  shutdownStarted = true;
   isQuitting = true;
   refreshTrayMenu();
   try {
@@ -542,13 +546,15 @@ if (!gotLock) {
     // Intentionally do nothing — the app lives in the tray until "Quit AI Pulse".
   });
 
-  app.on("before-quit", () => {
+  // Every quit path (tray "Quit", app.quit(), and Chromium's own SIGTERM/SIGINT
+  // handling — which never reaches Node's process.on handlers) funnels through
+  // quitAll so the supervised server and the Hyprland reservation go with us.
+  app.on("before-quit", (e) => {
     isQuitting = true;
+    if (shutdownStarted) return; // quitAll() finished and is calling app.quit()
+    e.preventDefault();
+    void quitAll();
   });
-
-  // A plain SIGTERM (systemd stopping the session scope, `kill`, Ctrl-C in a
-  // terminal) must take the supervised server down with us instead of
-  // orphaning it on the port.
   for (const signal of ["SIGTERM", "SIGINT"] as const) {
     process.on(signal, () => void quitAll());
   }
