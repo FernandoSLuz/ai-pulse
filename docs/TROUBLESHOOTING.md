@@ -18,6 +18,13 @@ This guide covers the most common issues with **AI Pulse** and how to fix them. 
 | Port **3847** already in use | Another process (or a second copy of AI Pulse) holds the port | Change the port in **Settings → Startup & service → Server port**. |
 | Installer blocked by **SmartScreen** | Windows doesn't recognize the publisher yet | Click **More info → Run anyway**. |
 | Desktop leaderboard not visible | The leaderboard window is hidden | Enable **Settings → Desktop leaderboard → Show**, or use the **tray → Show Leaderboard**. |
+| **Linux:** no tray icon | Your bar has no StatusNotifierItem host running | See [Tray icon missing (Linux)](#tray-icon-missing-linux). On Omarchy make sure the bar's `omarchy.tray` widget is enabled. |
+| **Linux:** `aipulse://` does nothing | The scheme handler isn't registered | `xdg-mime query default x-scheme-handler/aipulse` should print `ai-pulse.desktop`; otherwise run `update-desktop-database ~/.local/share/applications` and restart the app. |
+| **Linux/Hyprland:** leaderboard not docked, or floats anywhere | The Hyprland rule isn't loaded | `hyprctl configerrors`, then re-run `npm run linux:install`. See [Leaderboard not showing](#leaderboard-not-showing). |
+| **Linux:** **Always on top** is greyed out | Expected — Hyprland has no always-on-top | The shipped window rule floats and pins the widget, and the app reserves its strip so windows tile beside it. |
+| **Linux/Hyprland:** windows stay squeezed after AI Pulse crashed | The dock reservation was left behind | Start AI Pulse again (it clears it on launch) or run `hyprctl reload`. |
+| **Linux:** no notifications | No notification daemon is running | `notify-send -a 'AI Pulse' test` should pop a notification; on Omarchy the omarchy-shell notification daemon renders them. |
+| **Linux:** AppImage won't start | FUSE 2 is missing | `sudo pacman -S fuse2` (Arch/Omarchy). |
 
 ## "AI: degraded (rules)"
 
@@ -59,11 +66,52 @@ These features each depend on a specific key in **Settings → Connections**:
 The web dashboard is a content view only. Its settings gear redirects to the desktop app via the `aipulse://` deep link. If nothing happens, the app likely isn't installed or the protocol isn't registered:
 
 - Use the in-browser **"Edit here instead"** fallback drawer, **or**
-- Open the app directly from the **tray**.
+- Open the app directly from the **tray** (on Linux, from its right-click menu or your app launcher).
+
+On Linux the app registers the handler itself on every start (`~/.local/share/applications/ai-pulse.desktop` + `xdg-mime default ai-pulse.desktop x-scheme-handler/aipulse`). To check and repair:
+
+```bash
+xdg-mime query default x-scheme-handler/aipulse   # should print: ai-pulse.desktop
+update-desktop-database ~/.local/share/applications
+```
+
+Then restart the app.
 
 ## Installer blocked by SmartScreen
 
 When running `AI Pulse-Setup-<version>.exe`, Windows SmartScreen may warn about an unrecognized publisher. Click **More info → Run anyway**. The installer is per-user and needs no admin rights.
+
+## AppImage won't start (Linux)
+
+The AppImage mounts itself with **FUSE 2**. If it exits immediately or complains about `libfuse.so.2`:
+
+```bash
+sudo pacman -S fuse2      # Arch / Omarchy
+chmod +x ai-pulse-<version>.AppImage
+./ai-pulse-<version>.AppImage
+```
+
+Most Omarchy installs already have `fuse2`. Prefer the `.pacman` package on Arch for a final release (`sudo pacman -U ./ai-pulse-<version>.pacman`); RCs are AppImage-only.
+
+## Tray icon missing (Linux)
+
+On Linux the tray icon is a **StatusNotifierItem** over D-Bus, shown by whatever bar hosts SNI (on Omarchy, the omarchy-shell bar's `omarchy.tray` widget). If nothing shows up, check that a watcher exists and that AI Pulse registered with it:
+
+```bash
+busctl --user get-property org.kde.StatusNotifierWatcher /StatusNotifierWatcher org.kde.StatusNotifierWatcher RegisteredStatusNotifierItems
+```
+
+No watcher on the bus means your bar isn't providing a tray; an empty list means the app isn't running (start it from your launcher). Remember that clicking the icon does nothing on Linux — the right-click menu (**Open Settings**) is the way in.
+
+## No notifications (Linux)
+
+AI Pulse sends desktop notifications through `notify-send`/libnotify. Test the notification daemon on its own:
+
+```bash
+notify-send -a 'AI Pulse' test
+```
+
+If that shows nothing, no daemon is running (on Omarchy it's the omarchy-shell notification daemon). If it works but AI Pulse stays quiet, check the toggles under **Settings → Notifications**.
 
 ## Leaderboard not showing
 
@@ -72,16 +120,30 @@ The docked leaderboard is a separate window. If you can't see it:
 - Enable **Settings → Desktop leaderboard → Show** (you can also set dock side, always-on-top, and rows there), or
 - Use the **tray → Show Leaderboard**.
 
+On **Linux/Hyprland** the compositor owns placement and stacking (**Always on top** is disabled there). The window is floated, pinned to all workspaces, and docked to the right edge by the Hyprland rule that `npm run linux:install` puts in `~/.config/hypr/ai-pulse.lua`. If the widget is visible but not docked, or missing on some workspaces:
+
+```bash
+hyprctl clients -j | jq '.[] | select(.class=="ai-pulse")'   # is the window there, floating, pinned?
+hyprctl configerrors                                            # did the rule file load?
+```
+
+Then re-run `npm run linux:install` from the source checkout and `hyprctl reload`. Both AI Pulse windows have the class `ai-pulse`.
+
 ## Collecting logs
 
 When reporting a problem or diagnosing a crash, grab the server log:
 
 - In the app: **Settings → Open logs**
-- On disk: `userData/logs/server.log`
+- On disk: `userData/logs/server.log` (the updater writes `updater.log` next to it)
 
 ```text
 # Windows path
 %APPDATA%\AI Pulse\logs\server.log
+```
+
+```bash
+# Linux path — follow it live
+tail -f ~/.config/'AI Pulse'/logs/server.log
 ```
 
 Logs are rotated at 5 MB, so capture the relevant section soon after the issue occurs.

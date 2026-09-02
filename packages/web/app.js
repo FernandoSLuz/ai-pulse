@@ -875,7 +875,7 @@ function showAppRedirectToast() {
   toast.innerHTML =
     '<div class="app-toast-body"><strong>Opening the AI Pulse app…</strong>' +
     "<span>Settings &amp; preferences live in the app now. If nothing opens, launch " +
-    "<b>AI Pulse</b> from your system tray.</span></div>" +
+    "<b>AI Pulse</b> from your system tray or app launcher.</span></div>" +
     '<div class="app-toast-actions">' +
     '<button type="button" id="app-toast-fallback" class="btn btn-ghost btn-sm">Edit here instead</button>' +
     '<button type="button" id="app-toast-close" class="btn btn-ghost btn-sm">Dismiss</button></div>';

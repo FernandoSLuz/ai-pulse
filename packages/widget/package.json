@@ -1,6 +1,6 @@
 {
   "name": "@ai-pulse/widget",
-  "version": "1.0.0-rc.5",
+  "version": "1.1.0-rc.1",
   "productName": "AI Pulse",
   "desktopName": "ai-pulse.desktop",
   "private": true,

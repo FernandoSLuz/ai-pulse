@@ -4,7 +4,7 @@ The Electron desktop app is the single control surface for AI Pulse. It supervis
 
 ## Tray menu
 
-Right-click the AI Pulse tray icon to reach the service controls.
+Right-click the AI Pulse tray icon to reach the service controls. On Linux the icon is a StatusNotifierItem in your bar's tray (on Omarchy, the omarchy-shell bar's `omarchy.tray` widget); left/double-click do nothing there, so the context menu — including **Open Settings** — is the only interaction.
 
 | Item | What it does |
 | --- | --- |
@@ -23,6 +23,8 @@ To shut down both the server and the app:
 
 This stops the background service and closes the desktop app. Closing the Settings or leaderboard window alone does **not** exit — the app keeps running in the tray.
 
+The server process itself shuts down cleanly on `SIGTERM`/`SIGINT` (SQLite is checkpointed first), so `kill <pid>` on Linux is safe; the `pid` is reported by `GET /api/health`.
+
 ## Stop or restart just the background service
 
 Use the tray when you want the app to stay open but the server to cycle:
@@ -35,22 +37,24 @@ You can also reach the same controls from **Settings → Startup & service**.
 
 ## Disable auto-start
 
-Auto-launch is a Windows login item (an `HKCU` Run entry). It starts the app hidden in the tray. Turn it off either way:
+Auto-launch starts the app hidden in the tray. On Windows it is a login item (an `HKCU` Run entry); on Linux it is an XDG autostart entry, `~/.config/autostart/ai-pulse.desktop` (Omarchy's uwsm session runs it via `xdg-desktop-autostart.target`). Turn it off either way:
 
-- **In the app:** Settings → **Startup & service** → turn off **Start on login**.
+- **In the app:** Settings → **Startup & service** → turn off **Start on login** (on Linux this deletes the autostart file).
 - **In Windows:** **Task Manager → Startup** → select **AI Pulse** → **Disable**.
+- **In Linux:** delete `~/.config/autostart/ai-pulse.desktop`.
 
 Related toggle: **Start hidden in tray** (Settings → Startup & service) controls whether the app opens quietly in the tray on login.
 
 ## Where logs, database, and config live
 
-Everything lives under the app's `userData` folder. On Windows that is `%APPDATA%\AI Pulse\`.
+Everything lives under the app's `userData` folder. On Windows that is `%APPDATA%\AI Pulse\`; on Linux it is `~/.config/AI Pulse/`.
 
-| What | Path |
-| --- | --- |
-| API keys + preferences | `%APPDATA%\AI Pulse\config.json` |
-| SQLite database | `%APPDATA%\AI Pulse\data\ai-pulse.db` |
-| Server log | `%APPDATA%\AI Pulse\logs\server.log` |
+| What | Windows | Linux |
+| --- | --- | --- |
+| API keys + preferences | `%APPDATA%\AI Pulse\config.json` | `~/.config/AI Pulse/config.json` |
+| SQLite database | `%APPDATA%\AI Pulse\data\ai-pulse.db` | `~/.config/AI Pulse/data/ai-pulse.db` |
+| Server log | `%APPDATA%\AI Pulse\logs\server.log` | `~/.config/AI Pulse/logs/server.log` |
+| Updater log | `%APPDATA%\AI Pulse\logs\updater.log` | `~/.config/AI Pulse/logs/updater.log` |
 
 Notes:
 
@@ -59,7 +63,11 @@ Notes:
 
 ### Open the logs
 
-**Settings → Open logs** reveals `server.log` on disk.
+**Settings → Open logs** reveals `server.log` on disk. On Linux you can also follow it live:
+
+```bash
+tail -f ~/.config/'AI Pulse'/logs/server.log
+```
 
 ## Change the port
 
@@ -73,7 +81,7 @@ The always-on desktop leaderboard widget is controlled from **Settings → Deskt
 
 - **Show** — show or hide the widget.
 - **Dock left / right** — pin it to either screen edge.
-- **Always-on-top** — keep it above other windows.
+- **Always-on-top** — keep it above other windows. **Windows only**: on Linux/Hyprland the compositor owns placement and stacking, so the toggle is disabled; the Hyprland rule shipped in `packages/widget/linux/hypr/ai-pulse.lua` (installed by `npm run linux:install`) floats the widget, pins it to all workspaces, and docks it to the right edge below the bar. While the leaderboard is visible the app also **reserves its strip on that monitor** (`hl.monitor{reserved=…}` over `hyprctl eval`), so tiled windows lay out beside it instead of underneath — a real side dock. The reservation follows the dock side and monitor, and is released when the leaderboard is hidden, on quit, and on the next start (in case a crash left it behind; `hyprctl reload` also clears it). Both app windows carry the window class `ai-pulse`.
 - **Rows** — how many models to list.
 
 ## Open the dashboard in a browser
@@ -86,6 +94,8 @@ http://localhost:3847
 
 The dashboard is a content view only. Its settings gear redirects back into the desktop app via the `aipulse://` deep link (with an in-browser fallback drawer if the app isn't installed).
 
+The server binds to `127.0.0.1` only. To reach it from another device on your LAN, run it with `AI_PULSE_BIND_HOST=0.0.0.0` (see [CONFIGURATION.md](./CONFIGURATION.md#network)).
+
 ## Updating
 
 AI Pulse checks GitHub Releases for a newer version on startup and every few hours. Nothing installs on its own:
@@ -93,6 +103,14 @@ AI Pulse checks GitHub Releases for a newer version on startup and every few hou
 - When an update is found you get a tray/notification hint, and **Settings → Updates** shows it.
 - Click **Download & install** to fetch it, then **Restart & install** to apply. You can also **Check for updates** manually there.
 - Release-candidate builds are prereleases and are not offered as automatic updates.
+- **Linux:** in-app updates work for the **AppImage** (`latest-linux.yml`). A **pacman** install shows *unsupported* in **Settings → Updates** — upgrade it with `sudo pacman -U ./ai-pulse-<version>.pacman` from the next final release (RCs ship no `.pacman`).
+
+## Omarchy: theme and bar widget
+
+After `npm run linux:install` (see [INSTALL.md](./INSTALL.md#6-omarchy-integration-optional)):
+
+- **Theme** — the dashboard and the leaderboard follow the active Omarchy theme. The server watches the theme directory and pushes a `{type:"theme"}` WebSocket message, so open pages recolor without a reload; the installed `theme-set` hook also calls `POST /api/theme/reload`. If a page ever looks stale, `curl -X POST http://localhost:3847/api/theme/reload` forces a re-read.
+- **Bar widget** (`fernando.ai-pulse`) — shows the current leaderboard leader (signal glyph + name) in the omarchy-shell bar and turns **urgent** when the server is down or curation is degraded to rules. **Left click** opens the dashboard, **right click** opens Settings (`aipulse://`), **middle click** refreshes. Its settings are `port`, `interval`, `showLeader`, and `maxChars`.
 
 ## If something looks wrong
 

@@ -1,6 +1,6 @@
 # Architecture
 
-AI Pulse is a local "AI model radar" for Windows. It combines a news feed, benchmark rankings, an AI‑analyst briefing, an embedded chat with a web‑search agent, a "My Stack" upgrade advisor, and an always‑on desktop leaderboard widget — all driven from a single desktop app.
+AI Pulse is a local "AI model radar" for Windows and Linux (Omarchy/Hyprland). It combines a news feed, benchmark rankings, an AI‑analyst briefing, an embedded chat with a web‑search agent, a "My Stack" upgrade advisor, and an always‑on desktop leaderboard widget — all driven from a single desktop app.
 
 This document explains how the pieces fit together: the three packages, the supervisor process model, and how data flows through a poll cycle.
 
@@ -8,13 +8,14 @@ This document explains how the pieces fit together: the three packages, the supe
 
 ## Overview
 
-AI Pulse is a **monorepo** managed with **npm workspaces**. It ships as three packages, each with a distinct responsibility:
+AI Pulse is a **monorepo** managed with **npm workspaces**. It ships as three packages, plus an optional Omarchy bar plugin, each with a distinct responsibility:
 
 | Package | Type | Responsibility |
 | --- | --- | --- |
 | `packages/widget` | Electron desktop app | The single entry point and control surface. Supervises the server, and owns the tray, the Settings/control window, and the docked leaderboard window. |
 | `packages/server` | Node service | Node + Express + WebSocket + SQLite. Polls data sources, runs the AI analyst, and serves the REST API, the WebSocket feed, and the static web dashboard. |
 | `packages/web` | Static browser dashboard | A **content view only** — news, benchmarks, videos, chat, and briefings. Served by the server. |
+| `packages/omarchy-plugin` | omarchy-shell plugin | Optional bar widget (`fernando.ai-pulse`) for Omarchy: shows the current leader and opens the dashboard/Settings. Installed by `npm run linux:install`, not shipped inside the app packages. |
 
 The Electron app is the only place you edit configuration; the web dashboard is purely for viewing content.
 
@@ -28,6 +29,7 @@ The Electron app is the **single entry point**. Its main process:
 - Shows the **tray** with `Restart/Stop/Start Background Service` and `Quit AI Pulse` (which stops both the server and the app).
 - Shows the **Settings/control window** — the one place you edit API keys and preferences.
 - Shows the **docked leaderboard window** — the always‑on desktop widget.
+- **Integrates with the desktop per OS** (`src/platform.ts`). On Windows the NSIS installer provides the shortcuts and the `aipulse://` registry entry, and "Start on login" is an `HKCU` Run entry. On Linux the app itself writes, on every start, `~/.local/share/applications/ai-pulse.desktop` (launcher + `aipulse://` handler via `xdg-mime`), the hicolor icon, and — while "Start on login" is on — `~/.config/autostart/ai-pulse.desktop`. The tray is a StatusNotifierItem over D-Bus there (no appindicator library needed).
 
 The web dashboard's settings gear no longer edits anything itself: it redirects to the desktop app via the `aipulse://` deep link, with an in‑browser fallback drawer if the app isn't installed.
 
@@ -58,6 +60,8 @@ A **`ServerSupervisor`** keeps the child healthy:
 
 Server `stdout`/`stderr` are written to `userData/logs/server.log`, **rotated at 5 MB**. Service controls (`Restart/Stop/Start Background Service`) and `Quit AI Pulse` live in the tray.
 
+The server binds **`127.0.0.1`** by default (`AI_PULSE_BIND_HOST=0.0.0.0` to expose it), restricts CORS to its own origins, and shuts down cleanly on `SIGTERM`/`SIGINT`, checkpointing SQLite first. `GET /api/health` carries `app: "ai-pulse"`, `version` (from `AI_PULSE_VERSION`, which the app sets when spawning) and `pid`; the supervisor only **adopts** an already-running listener on the port if it identifies itself that way, so a stranger on 3847 is treated as a port conflict rather than as our server.
+
 ```mermaid
 flowchart TD
     subgraph Electron["Electron desktop app — packages/widget"]
@@ -75,6 +79,7 @@ flowchart TD
 
     DB[("SQLite — ai-pulse.db")]
     Browser["Web dashboard in browser — packages/web"]
+    Theme["Omarchy theme — colors.toml (Linux)"]
 
     subgraph Sources["External data sources"]
         AA["Artificial Analysis"]
@@ -88,6 +93,7 @@ flowchart TD
     Server -- "serves static files" --> StaticWeb --> Browser
     Server --> WS -- "live feed" --> Browser
     Server --> REST -- "requests" --> Browser
+    Theme -- "watched → /theme.css" --> Server
 
     AA -- "benchmarks" --> Server
     RSS -- "news" --> Server
@@ -103,7 +109,7 @@ A **poll cycle** moves data from the outside world into SQLite, decides what cha
 2. **Upsert.** Write the fetched records into SQLite.
 3. **Detect changes.** Compare against what's already stored to find new models, leader changes, breaking news, and other deltas.
 4. **Run the analyst.** The **LLM router** (see below) curates and produces briefings/analysis for the changes.
-5. **Broadcast.** Push updates over the **WebSocket** feed to connected dashboards **and send Windows notifications** for relevant events.
+5. **Broadcast.** Push updates over the **WebSocket** feed to connected dashboards **and send desktop notifications** (Windows toasts; `notify-send`/libnotify on Linux) for relevant events.
 
 Alongside the poll cycle, clients read content on demand via the **REST API**, and the embedded **chat** answers questions through its web‑search agent.
 
@@ -142,6 +148,7 @@ Curation **never silently degrades**. Every run records which provider served it
 | `poll-health.ts` | Records poll outcomes and provider status surfaced by `/api/health`. |
 | `db.ts` | SQLite access via `better-sqlite3`. |
 | `chat/` | The embedded chat web‑search agent. |
+| `theme.ts` | Omarchy theme bridge: reads `colors.toml`, serves `/theme.css`, `/api/theme`, `/api/theme/reload`, and pushes `{type:"theme"}` over the WebSocket. |
 
 ## Video `kind` and client contracts
 
@@ -163,14 +170,33 @@ Company channels live in `config/sources.json` as `companyChannels` (same shape 
 | `src/supervisor.ts` | `ServerSupervisor` — spawns, health‑pings, and restarts the server child. |
 | `src/config.ts` | Loads and edits `config.json` (API keys + preferences). |
 | `src/paths.ts` | Resolves userData, resource, DB, and log locations. |
+| `src/platform.ts` | Linux desktop integration: `.desktop` entry, icon, `aipulse://` handler, XDG autostart. |
 | `renderer/settings.*` | The Settings/control window UI. |
+| `linux/hypr/ai-pulse.lua` | Hyprland window rule for the leaderboard (float, pin, dock right below the bar). |
+| `linux/hooks/ai-pulse-theme-set` | Omarchy `theme-set` hook: `POST /api/theme/reload` on theme switch. |
+| `scripts/linux-install.mjs` | `npm run linux:install` / `linux:uninstall` — installs the rule, the hook, and the bar plugin into `~/.config`. |
+
+### `packages/omarchy-plugin`
+
+| Path | Role |
+| --- | --- |
+| `fernando.ai-pulse/manifest.json` | Plugin manifest (settings: `port`, `interval`, `showLeader`, `maxChars`). |
+| `fernando.ai-pulse/BarWidget.qml` | The bar widget: current leader (signal glyph + name); urgent when the server is down or curation is degraded; left click = dashboard, right click = Settings (`aipulse://`), middle click = refresh. |
+
+## Linux desktop integration (Hyprland / Omarchy)
+
+- Both Electron windows have the window class **`ai-pulse`** (`app.setDesktopName("ai-pulse.desktop")`, matching `StartupWMClass` in the packaged `.desktop` entry). Window rules and scripts match on that, never on `Electron`.
+- On Wayland the compositor owns placement and stacking, and Hyprland has no always‑on‑top. The **Always on top** toggle is therefore disabled on Linux; instead `linux/hypr/ai-pulse.lua` (installed to `~/.config/hypr/ai-pulse.lua` and required from `hyprland.lua`) floats the leaderboard, pins it to all workspaces, and docks it to the right edge below the bar.
+- **Theme**: on Omarchy the server reads `~/.local/state/omarchy/current/theme/colors.toml` (override with `OMARCHY_THEME_COLORS`), maps it onto the CSS variables of `packages/web/styles.css`, and serves `GET /theme.css`, which the dashboard and the leaderboard link. It watches the theme directory and pushes `{type:"theme"}` over the WebSocket so pages recolor without a reload; `POST /api/theme/reload` covers what inotify misses (the installed hook calls it). Without the file the stylesheet is empty, so Windows is unaffected.
+- **Bar widget**: `packages/omarchy-plugin/fernando.ai-pulse` polls the server, shows the leader, and flags the bar entry as urgent when the server is down or curation is degraded to rules.
 
 ## Serving and endpoints
 
 The server both serves the dashboard and exposes the live/data APIs:
 
 - **Static web dashboard** — the `packages/web` content view, served directly by the server.
-- **REST API** — on‑demand reads, including `GET /api/health` for supervisor health‑pings and provider status.
-- **WebSocket feed** — live push of poll updates to connected dashboards.
+- **REST API** — on‑demand reads, including `GET /api/health` for supervisor health‑pings, provider status, and the `app`/`version`/`pid` identity.
+- **WebSocket feed** — live push of poll updates to connected dashboards (plus `{type:"theme"}` on Omarchy theme changes).
+- **Theme bridge** (Linux/Omarchy) — `GET /theme.css`, `GET /api/theme`, `POST /api/theme/reload`; empty on Windows.
 
 For configuration, data locations, and how keys reach the server child, see [`./CONFIGURATION.md`](./CONFIGURATION.md).

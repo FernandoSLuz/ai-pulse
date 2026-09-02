@@ -108,7 +108,7 @@ The server polls Artificial Analysis (benchmarks), RSS feeds (news), and YouTube
 
 You have three complementary ways to check status:
 
-- **Tray menu** — the app lives in the system tray, where you can **Start / Stop / Restart Background Service** or **Quit AI Pulse** (which stops both the server and the app). If the service is running from here, the supervisor is active.
+- **Tray menu** — the app lives in the system tray (on Linux, a StatusNotifierItem in your bar's tray — on Omarchy, the omarchy-shell bar; use its right-click menu, since clicks do nothing there), where you can **Start / Stop / Restart Background Service** or **Quit AI Pulse** (which stops both the server and the app). If the service is running from here, the supervisor is active.
 - **Settings → AI curation health** — shows which provider is serving curation and whether it's currently degraded, mirroring the `AI: <provider>` / `AI: degraded` indicator.
 - **`GET /api/health`** — the source of truth. Returns full provider status and the last curation outcome, plus the server health the supervisor uses for its 20s pings:
 

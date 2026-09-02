@@ -14,7 +14,7 @@
     "gate": "npm run build && node --check packages/web/app.js && node --check packages/widget/renderer/settings.js",
     "linux:install": "npm run linux:install -w @ai-pulse/widget"
   },
-  "version": "1.0.0-rc.5",
+  "version": "1.1.0-rc.1",
   "engines": {
     "node": ">=22.14"
   }

@@ -6,13 +6,16 @@ In the packaged app, **all settings and API keys live in the app's Settings wind
 
 ## Where your configuration lives
 
-The packaged app keeps everything under Electron's `userData` directory. On Windows that resolves to `%APPDATA%\AI Pulse`.
+The packaged app keeps everything under Electron's `userData` directory. On Windows that resolves to `%APPDATA%\AI Pulse`; on Linux to `~/.config/AI Pulse`.
 
-| What | Location | Notes |
-| --- | --- | --- |
-| API keys + preferences | `userData/config.json` → `%APPDATA%\AI Pulse\config.json` | The app is the only place you edit this. Keys are injected into the server child's environment at launch. |
-| SQLite database | `userData\data\ai-pulse.db` | Directory overridable via `AI_PULSE_DATA_DIR`. |
-| Server logs | `userData\logs\server.log` | Rotated at 5 MB. |
+| What | Windows | Linux | Notes |
+| --- | --- | --- | --- |
+| API keys + preferences | `%APPDATA%\AI Pulse\config.json` | `~/.config/AI Pulse/config.json` | The app is the only place you edit this. Keys are injected into the server child's environment at launch. |
+| SQLite database | `%APPDATA%\AI Pulse\data\ai-pulse.db` | `~/.config/AI Pulse/data/ai-pulse.db` | Directory overridable via `AI_PULSE_DATA_DIR`. |
+| Server logs | `%APPDATA%\AI Pulse\logs\server.log` | `~/.config/AI Pulse/logs/server.log` | Rotated at 5 MB. |
+| Updater log | `%APPDATA%\AI Pulse\logs\updater.log` | `~/.config/AI Pulse/logs/updater.log` | electron-updater output. |
+
+On Linux the app also writes a few desktop-integration files outside `userData` (`ai-pulse.desktop`, the icon, and the XDG autostart entry) — see [INSTALL.md](./INSTALL.md#what-the-app-sets-up-on-linux).
 
 ## API keys
 
@@ -58,8 +61,8 @@ Curation **never silently degrades**. Every run records which provider served it
 The Settings window is organized into these sections:
 
 - **Connections** — all API keys.
-- **Desktop leaderboard** — show/hide, dock left or right, always-on-top, number of rows.
-- **Startup & service** — Start on login, Start hidden in tray, Server port, and Restart / Stop / Start.
+- **Desktop leaderboard** — show/hide, dock left or right, always-on-top, number of rows. **Always-on-top is Windows-only**: on Linux/Hyprland the compositor owns placement and stacking, so the toggle is disabled and the shipped Hyprland rule floats, pins, and docks the widget instead, while the app reserves the widget's strip on that monitor so other windows tile beside it (see [INSTALL.md](./INSTALL.md#6-omarchy-integration-optional)).
+- **Startup & service** — Start on login (Windows: an `HKCU` Run entry; Linux: `~/.config/autostart/ai-pulse.desktop`), Start hidden in tray, Server port, and Restart / Stop / Start.
 - **Preferences** — primary model, provider, priority weights (coding / reasoning / speed / cost), budget tier, and notes (the upgrade advisor formerly known as the web "My Stack").
 - **Notifications** — breaking news, new models & leader changes, upgrade suggestions.
 - **AI curation health** — live provider status and last outcome.
@@ -84,9 +87,24 @@ The Settings window is organized into these sections:
 
 New feed URLs must be verified with a real GET (HTTP 200 + parseable RSS/Atom + at least one item in the last 90 days) before they enter this file. YouTube `channelId` values come from `youtube.com/@handle` (`"externalId":"UC…"`), never guessed.
 
+## Omarchy theme
+
+On **Omarchy** the dashboard and the desktop leaderboard follow the active system theme. The server reads `~/.local/state/omarchy/current/theme/colors.toml`, maps its colors onto the CSS variables in `packages/web/styles.css`, and serves the result as `GET /theme.css`, which both pages link. It also:
+
+- exposes `GET /api/theme` (the resolved palette) and `POST /api/theme/reload` (force a re-read — the `ai-pulse-theme-set` hook installed by `npm run linux:install` calls it on every theme switch);
+- watches the theme directory and pushes a `{type:"theme"}` WebSocket message so open pages recolor **without a reload**.
+
+Set `OMARCHY_THEME_COLORS` to point at a different palette file. When the file doesn't exist (Windows, or a non-Omarchy Linux desktop) the stylesheet is simply empty and the built-in look applies unchanged.
+
+## Network
+
+The server binds **`127.0.0.1`** by default, so nothing else on your LAN can reach it; set `AI_PULSE_BIND_HOST=0.0.0.0` to expose it. CORS is restricted to the server's own origins either way. It shuts down cleanly on `SIGTERM`/`SIGINT` (SQLite is checkpointed first), and `GET /api/health` identifies itself with `app: "ai-pulse"`, `version`, and `pid` — the desktop supervisor only adopts an already-running listener on the port if it answers that way.
+
 ## Developer environment variables
 
-For **local development** only, running the server standalone reads a repo-root `.env` file — see [`.env.example`](../.env.example). The packaged app does **not** use `.env`; it injects config from `config.json` instead.
+For **local development** only, running the server standalone reads a `.env` file — see [`.env.example`](../.env.example). The lookup order is `$AI_PULSE_ENV_FILE` ▸ `$AI_PULSE_RESOURCE_DIR/.env` ▸ `./.env` ▸ the repo root. The packaged app does **not** use `.env`; it injects config from `config.json` instead.
+
+> Running the desktop app **unpackaged from a source checkout** (`npm run app`) seeds the API keys from the repo-root `.env` into `config.json` **once**, on first run — it never overwrites keys you have already saved. Packaged builds ignore `.env` entirely.
 
 The server honors these environment variables:
 
@@ -96,6 +114,10 @@ The server honors these environment variables:
 | `AI_PULSE_DATA_DIR` | Directory for the SQLite database. |
 | `AI_PULSE_RESOURCE_DIR` | Packaged server resources (`config/`, `assets/`). |
 | `AI_PULSE_WEB_DIR` | The web dashboard directory served by the server. |
+| `AI_PULSE_BIND_HOST` | Interface to listen on. Default `127.0.0.1` (local only); `0.0.0.0` exposes the server to your LAN. |
+| `AI_PULSE_ENV_FILE` | Explicit path of the `.env` file to load (dev only). |
+| `AI_PULSE_VERSION` | Set by the desktop app when it spawns the server; reported by `GET /api/health`. |
+| `OMARCHY_THEME_COLORS` | Linux/Omarchy: path of the `colors.toml` used to build `/theme.css` (default `~/.local/state/omarchy/current/theme/colors.toml`). |
 
 ## Where your keys go
 
