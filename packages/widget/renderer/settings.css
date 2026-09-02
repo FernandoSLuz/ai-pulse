@@ -18,7 +18,7 @@ html, body {
   height: 100%;
   background: var(--bg);
   color: var(--text);
-  font: 13px/1.5 "Segoe UI", system-ui, sans-serif;
+  font: 13px/1.5 system-ui, "Segoe UI", sans-serif;
 }
 
 body { display: flex; flex-direction: column; }

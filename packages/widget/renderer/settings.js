@@ -117,6 +117,9 @@ function renderLeaderboard() {
   const lb = state.config.leaderboard;
   el("lb-show").checked = lb.show;
   el("lb-pin").checked = lb.pinOnTop;
+  const pinSupported = state.alwaysOnTopSupported !== false;
+  el("lb-pin").disabled = !pinSupported;
+  el("lb-pin-hint").classList.toggle("hidden", pinSupported);
   el("lb-rows").value = lb.rows;
   el("lb-rows-val").textContent = lb.rows;
   document.querySelectorAll("#lb-dock button").forEach((b) => {
@@ -130,6 +133,16 @@ function renderStartup() {
   el("auto-launch").checked = state.config.autoLaunch;
   el("start-hidden").checked = state.config.startHidden;
   el("port").value = state.config.port;
+  el("startup-blurb").textContent =
+    state.platform === "win32"
+      ? "AI Pulse runs quietly in your system tray. Disable start-on-login here or in Task Manager → Startup at any time."
+      : state.platform === "linux"
+        ? "AI Pulse runs quietly in your bar's tray. Start-on-login is an XDG autostart entry" +
+          (state.autostartPath ? " (" + state.autostartPath + ")" : "") + " — toggle it here or delete that file."
+        : "AI Pulse runs quietly in your system tray. Disable start-on-login here at any time.";
+  if (state.logPath) {
+    el("update-log-path").textContent = "Logs: " + state.logPath.replace(/server\.log$/, "{server,updater}.log");
+  }
 
   const s = state.service;
   const detail = s.userStopped

@@ -37,7 +37,7 @@
     <!-- Leaderboard -->
     <section class="card">
       <div class="card-head"><h2>Desktop leaderboard</h2>
-        <p class="muted">The always-on-top ranking widget docked to your screen edge.</p></div>
+        <p class="muted">The ranking widget docked to your screen edge.</p></div>
       <div class="row">
         <label class="switch"><input type="checkbox" id="lb-show" /><span>Show leaderboard</span></label>
       </div>
@@ -50,6 +50,7 @@
       </div>
       <div class="row">
         <label class="switch"><input type="checkbox" id="lb-pin" /><span>Always on top of other windows</span></label>
+        <span id="lb-pin-hint" class="muted small hidden">On Wayland the window manager owns stacking — AI Pulse ships a Hyprland rule that floats and pins the widget.</span>
       </div>
       <div class="row">
         <span class="row-label">Rows</span>
@@ -61,8 +62,7 @@
     <!-- Startup -->
     <section class="card">
       <div class="card-head"><h2>Startup &amp; service</h2>
-        <p class="muted">AI Pulse runs quietly in your system tray. Disable start-on-login here or in Task Manager →
-          Startup at any time.</p></div>
+        <p class="muted" id="startup-blurb">AI Pulse runs quietly in your system tray. Disable start-on-login here at any time.</p></div>
       <div class="row">
         <label class="switch"><input type="checkbox" id="auto-launch" /><span>Start automatically on login</span></label>
       </div>
@@ -126,7 +126,7 @@
     <!-- Notifications -->
     <section class="card">
       <div class="card-head"><h2>Notifications</h2>
-        <p class="muted">Windows toasts for what matters.</p></div>
+        <p class="muted">Desktop notifications for what matters.</p></div>
       <div class="row"><label class="switch"><input type="checkbox" id="notif-news" /><span>Breaking news</span></label></div>
       <div class="row"><label class="switch"><input type="checkbox" id="notif-rankings" /><span>New models &amp; leader changes</span></label></div>
       <div class="row"><label class="switch"><input type="checkbox" id="notif-upgrades" /><span>Upgrade suggestions for your stack</span></label></div>
@@ -147,7 +147,7 @@
         </div>
       </div>
       <div class="row">
-        <span class="muted small">Update log: userData\logs\updater.log</span>
+        <span class="muted small" id="update-log-path">Update log: userData/logs/updater.log</span>
         <a href="#" id="open-releases" class="key-getlink" style="margin-left:auto">Download manually ↗</a>
       </div>
     </section>

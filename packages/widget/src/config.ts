@@ -1,3 +1,4 @@
+import { app } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import { configPath, dataDir, serverBundleDir, legacyConfigPaths } from "./paths";
@@ -136,6 +137,7 @@ export function serverEnv(config: AppConfig): NodeJS.ProcessEnv {
     AI_PULSE_DATA_DIR: dataDir(),
     AI_PULSE_RESOURCE_DIR: bundleDir,
     AI_PULSE_WEB_DIR: path.join(bundleDir, "web"),
+    AI_PULSE_VERSION: app.getVersion(),
     PORT: String(config.port),
   };
   // config.json keys win over any inherited env so the app's Settings are authoritative.

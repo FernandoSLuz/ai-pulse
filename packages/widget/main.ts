@@ -11,13 +11,22 @@ import {
 } from "./src/config";
 import { serverLogPath, settingsHtml, settingsPreload, leaderboardPreload } from "./src/paths";
 import { Updater } from "./src/updater";
+import { isLinux, DESKTOP_FILE, PROTOCOL, applyAutoLaunch, installDesktopIntegration } from "./src/platform";
 
 // Set the app name before anything reads app.getPath("userData"), so config,
-// data, and logs live under %APPDATA%\AI Pulse (not the scoped package name).
+// data, and logs live under %APPDATA%\AI Pulse / ~/.config/AI Pulse (not the
+// scoped package name).
 app.setName("AI Pulse");
+// Linux window identity: the Wayland app_id (and X11 WM_CLASS) come from the
+// desktop name, read when the first BrowserWindow is constructed. "ai-pulse"
+// is what the Hyprland rules, StartupWMClass and the .desktop file all match.
+if (isLinux) app.setDesktopName(DESKTOP_FILE);
 
 const WIDGET_WIDTH = 760;
 const TOP_MARGIN = 12;
+// Wayland exposes no work area (Omarchy's bar is invisible to xdg clients), so
+// reserve the bar height ourselves; the Hyprland rule places the window at y=38.
+const LINUX_TOP_INSET = 38;
 const WIDGET_ROW_HEIGHT = 21;
 const WIDGET_CHROME = 260;
 const WIDGET_HEAD = 26;
@@ -38,7 +47,11 @@ const launchedHidden = process.argv.includes("--hidden");
 // --- Leaderboard (docked always-on-top widget) ------------------------------
 
 function workArea() {
-  return screen.getPrimaryDisplay().workArea;
+  const display = screen.getPrimaryDisplay();
+  // On Hyprland workArea === bounds; subtract the bar inset ourselves.
+  if (!isLinux) return display.workArea;
+  const b = display.bounds;
+  return { x: b.x, y: b.y + LINUX_TOP_INSET, width: b.width, height: b.height - LINUX_TOP_INSET };
 }
 
 function maxWidgetHeight(): number {
@@ -52,6 +65,12 @@ function applyLeaderboardBounds(height: number): void {
   if (!leaderboardWindow) return;
   const area = workArea();
   const h = Math.min(Math.max(height, 200), maxWidgetHeight());
+  if (isLinux) {
+    // Wayland forbids client-side positioning; the Hyprland rule docks the
+    // window, we only follow the content height.
+    leaderboardWindow.setSize(WIDGET_WIDTH, h);
+    return;
+  }
   const x = config.leaderboard.dockSide === "right" ? area.x + area.width - WIDGET_WIDTH : area.x;
   leaderboardWindow.setBounds({ x, y: area.y + TOP_MARGIN, width: WIDGET_WIDTH, height: h });
 }
@@ -67,19 +86,34 @@ function createLeaderboardWindow(): void {
     height: 400,
     x: config.leaderboard.dockSide === "right" ? area.x + area.width - WIDGET_WIDTH : area.x,
     y: area.y + TOP_MARGIN,
+    // Stable title: the Hyprland rule matches it (static rules evaluate at map time).
+    title: "AI Pulse Widget",
     frame: false,
     transparent: true,
-    alwaysOnTop: config.leaderboard.pinOnTop,
+    // Always-on-top is a Wayland no-op; Hyprland float+pin rules take over on Linux.
+    alwaysOnTop: !isLinux && config.leaderboard.pinOnTop,
     skipTaskbar: true,
     resizable: false,
     movable: true,
-    hasShadow: true,
+    // Electron >= 41 draws GTK client-side shadows/resize borders and (>= 43)
+    // rounded corners on frameless Wayland windows — keep the widget flat and
+    // let Hyprland's `rounding` rule own the shape.
+    hasShadow: !isLinux,
+    roundedCorners: !isLinux,
+    backgroundColor: "#00000000",
     show: false,
     webPreferences: {
       preload: leaderboardPreload(),
       contextIsolation: true,
       nodeIntegration: false,
     },
+  });
+  leaderboardWindow.on("page-title-updated", (e) => e.preventDefault());
+  // Rows and strips open links with window.open / target=_blank: hand every
+  // web URL to the desktop browser instead of spawning Electron windows.
+  leaderboardWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
+    return { action: "deny" };
   });
   leaderboardWindow.loadURL(leaderboardUrl());
   leaderboardWindow.once("ready-to-show", () => leaderboardWindow?.show());
@@ -140,7 +174,9 @@ function createSettingsWindow(): void {
 function createTrayIcon(): Electron.NativeImage {
   const iconPath = path.join(__dirname, "assets", "tray-icon.png");
   const fromFile = nativeImage.createFromPath(iconPath);
-  if (!fromFile.isEmpty()) return fromFile.resize({ width: 16, height: 16 });
+  // Linux: the StatusNotifierItem host scales the pixmap for its slot and DPI
+  // (Omarchy runs 4K displays at 1.5x), so ship the full 128px RGBA glyph.
+  if (!fromFile.isEmpty()) return isLinux ? fromFile : fromFile.resize({ width: 16, height: 16 });
 
   const size = 16;
   const buf = Buffer.alloc(size * size * 4);
@@ -222,7 +258,8 @@ function refreshTrayMenu(): void {
 function createTray(): void {
   tray = new Tray(createTrayIcon());
   tray.setToolTip("AI Pulse");
-  tray.on("double-click", () => createSettingsWindow());
+  // Tray click events never fire on Linux; the context menu carries "Open Settings".
+  if (!isLinux) tray.on("double-click", () => createSettingsWindow());
   refreshTrayMenu();
 }
 
@@ -231,12 +268,7 @@ function createTray(): void {
 function setAutoLaunch(enabled: boolean): void {
   config.autoLaunch = enabled;
   saveConfig(config);
-  if (app.isPackaged) {
-    app.setLoginItemSettings({
-      openAtLogin: enabled,
-      args: config.startHidden ? ["--hidden"] : [],
-    });
-  }
+  applyAutoLaunch(config);
   refreshTrayMenu();
   pushSettingsState();
 }
@@ -271,7 +303,16 @@ function settingsState() {
     keyNames: LLM_KEY_NAMES,
     service: supervisor.getStatus(),
     update: updater.state,
+    platform: process.platform,
+    logPath: serverLogPath(),
+    alwaysOnTopSupported: !isLinux,
+    autostartPath: isLinux ? autostartHint() : null,
   };
+}
+
+function autostartHint(): string {
+  const base = process.env.XDG_CONFIG_HOME || path.join(app.getPath("home"), ".config");
+  return path.join(base, "autostart", DESKTOP_FILE);
 }
 
 function pushSettingsState(): void {
@@ -304,12 +345,9 @@ function registerIpc(): void {
     }
     saveConfig(config);
     if (leaderboardWindow) applyLeaderboardBounds(leaderboardWindow.getBounds().height);
-    leaderboardWindow?.setAlwaysOnTop(config.leaderboard.pinOnTop, "floating");
+    if (!isLinux) leaderboardWindow?.setAlwaysOnTop(config.leaderboard.pinOnTop, "floating");
     if (typeof prefs.autoLaunch === "boolean") setAutoLaunch(prefs.autoLaunch);
-    else if (hiddenChanged && app.isPackaged) {
-      // Keep the login-item's --hidden arg in sync when only startHidden changed.
-      app.setLoginItemSettings({ openAtLogin: config.autoLaunch, args: config.startHidden ? ["--hidden"] : [] });
-    }
+    else if (hiddenChanged) applyAutoLaunch(config); // keep the --hidden arg in sync
     if (portChanged) {
       supervisor.restart();
       // The leaderboard is loaded against the old port; drop it so the
@@ -337,7 +375,11 @@ function registerIpc(): void {
   ipcMain.handle("update:status", () => updater.state);
 
   ipcMain.handle("app:openDashboard", () => void shell.openExternal(dashboardUrl()));
-  ipcMain.handle("app:openLogs", () => void shell.openPath(serverLogPath()));
+  ipcMain.handle("app:openLogs", async () => {
+    // .log may have no handler on Linux — fall back to revealing it in the file manager.
+    const err = await shell.openPath(serverLogPath());
+    if (err) shell.showItemInFolder(serverLogPath());
+  });
   ipcMain.handle("app:openExternal", (_e, url: string) => {
     // Only ever open normal web links (e.g. provider key pages).
     if (typeof url === "string" && /^https?:\/\//i.test(url)) void shell.openExternal(url);
@@ -400,12 +442,22 @@ function handleProtocolArgv(argv: string[]): void {
 }
 
 function registerProtocol(): void {
+  if (isLinux) {
+    // Electron's own registration needs CHROME_DESKTOP (set by setDesktopName)
+    // AND an installed .desktop entry, and AppImages/source checkouts install
+    // none — so write ours and register the scheme with xdg-mime first.
+    void installDesktopIntegration().then(() => {
+      const ok = app.setAsDefaultProtocolClient(PROTOCOL);
+      console.log(`[Protocol] ${PROTOCOL}:// handler: xdg-mime registered; Electron ${ok ? "confirmed" : "deferred"}`);
+    });
+    return;
+  }
   if (app.isPackaged) {
-    app.setAsDefaultProtocolClient("aipulse");
+    app.setAsDefaultProtocolClient(PROTOCOL);
   } else if (process.platform === "win32" && process.argv.length >= 2) {
     // Dev: register with the explicit electron + script path so the browser
     // dashboard's aipulse:// link can reach this instance.
-    app.setAsDefaultProtocolClient("aipulse", process.execPath, [path.resolve(process.argv[1])]);
+    app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
   }
 }
 
@@ -445,13 +497,9 @@ if (!gotLock) {
     createTray();
     supervisor.start();
 
-    // Apply auto-launch registration to match saved config on every start.
-    if (app.isPackaged) {
-      app.setLoginItemSettings({
-        openAtLogin: config.autoLaunch,
-        args: config.startHidden ? ["--hidden"] : [],
-      });
-    }
+    // Apply auto-launch registration to match saved config on every start
+    // (on Linux this also refreshes the autostart entry's launcher path).
+    applyAutoLaunch(config);
 
     if (!launchedHidden) createSettingsWindow();
     handleProtocolArgv(process.argv); // cold-start deep link

@@ -49,6 +49,7 @@ export function configPath(): string {
  * name before app.setName("AI Pulse") moved userData to %APPDATA%\AI Pulse.)
  */
 export function legacyConfigPaths(): string[] {
+  if (process.platform !== "win32") return []; // the rc.1 layout only ever existed on Windows
   const appData = app.getPath("appData"); // %APPDATA% (Roaming)
   return [
     path.join(appData, "@ai-pulse", "widget", "config.json"),

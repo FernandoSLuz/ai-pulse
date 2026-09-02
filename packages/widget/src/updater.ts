@@ -36,6 +36,17 @@ export interface UpdateState {
 const CHECK_INTERVAL_MS = 6 * 60 * 60_000;
 const INITIAL_DELAY_MS = 12_000;
 
+/**
+ * electron-updater can only replace what it installed: NSIS on Windows and
+ * AppImages on Linux (APPIMAGE is set by the AppImage runtime). A pacman
+ * install or a source checkout gets the "unsupported" state instead.
+ */
+export function updatesSupported(): boolean {
+  if (!app.isPackaged) return false;
+  if (process.platform === "linux") return Boolean(process.env.APPIMAGE);
+  return true;
+}
+
 function createLogger() {
   let file: string | null = null;
   try {
@@ -69,7 +80,7 @@ export class Updater extends EventEmitter {
   constructor() {
     super();
     this.state = {
-      status: app.isPackaged ? "idle" : "unsupported",
+      status: updatesSupported() ? "idle" : "unsupported",
       currentVersion: app.getVersion(),
       availableVersion: null,
       percent: 0,
@@ -81,7 +92,7 @@ export class Updater extends EventEmitter {
     if (this.started) return;
     this.started = true;
     // electron-updater only works in a packaged app; in dev it just throws.
-    if (!app.isPackaged) return;
+    if (!updatesSupported()) return;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     autoUpdater.logger = createLogger() as any;
@@ -111,20 +122,20 @@ export class Updater extends EventEmitter {
   }
 
   check(): void {
-    if (!app.isPackaged) return;
+    if (!updatesSupported()) return;
     this.set({ status: "checking", error: null });
     autoUpdater.checkForUpdates().catch((e) => this.set({ status: "error", error: (e as Error).message }));
   }
 
   download(): void {
-    if (!app.isPackaged) return;
+    if (!updatesSupported()) return;
     this.set({ status: "downloading", percent: 0, error: null });
     autoUpdater.downloadUpdate().catch((e) => this.set({ status: "error", error: (e as Error).message }));
   }
 
   /** Quit and install the downloaded update — the only place that restarts. */
   install(): void {
-    if (app.isPackaged && this.state.status === "downloaded") {
+    if (updatesSupported() && this.state.status === "downloaded") {
       try {
         autoUpdater.quitAndInstall();
       } catch (e) {
@@ -140,7 +151,9 @@ export class Updater extends EventEmitter {
 
   private notify(title: string, body: string): void {
     try {
-      if (Notification.isSupported()) new Notification({ title, body }).show();
+      if (Notification.isSupported()) {
+        new Notification({ title, body, icon: path.join(__dirname, "..", "assets", "app-icon-256.png") }).show();
+      }
     } catch {
       /* notifications unavailable */
     }
