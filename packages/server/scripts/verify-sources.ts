@@ -98,7 +98,13 @@ async function checkFeed(feed: FeedConfig): Promise<void> {
 async function checkChannel(kind: string, ch: ChannelConfig): Promise<void> {
   const url = `https://www.youtube.com/feeds/videos.xml?channel_id=${ch.channelId}`;
   try {
-    const { status, xml } = await fetchXml(url);
+    // Same retry policy as fetchers/youtube-channels.ts: YouTube's edges answer
+    // 200/404/500 at random on bad days, and each attempt hits another edge.
+    let { status, xml } = await fetchXml(url);
+    for (let attempt = 2; attempt <= 4 && (status === 404 || status === 429 || status >= 500); attempt++) {
+      await new Promise((r) => setTimeout(r, 600 * attempt));
+      ({ status, xml } = await fetchXml(url));
+    }
     if (status !== 200) {
       report(kind, `${ch.name} (${ch.handle})`, false, `HTTP ${status}`);
       return;

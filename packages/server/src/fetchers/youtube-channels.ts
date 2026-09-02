@@ -59,18 +59,42 @@ function extractThumbnail(entry: Parser.Item & { mediaGroup?: unknown }): string
   return media?.["media:thumbnail"]?.$?.url ?? link;
 }
 
+const FEED_ATTEMPTS = 4;
+const FEED_RETRY_BASE_MS = 600;
+
+/**
+ * YouTube's feed endpoint answers 200/404/500 at random across Google's edge
+ * nodes on a bad day (observed 2026-09-02: ~1 in 6 requests succeeded, same
+ * URL, same client). Each attempt lands on a different edge via DNS
+ * round-robin, so a few short retries recover most channels instead of
+ * waiting a whole poll cycle.
+ */
+async function fetchFeedXml(url: string): Promise<string> {
+  let lastError: Error | null = null;
+  for (let attempt = 1; attempt <= FEED_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(url, {
+        signal: AbortSignal.timeout(FEED_TIMEOUT_MS),
+        headers: {
+          "User-Agent": "AI-Pulse/1.0 (+https://localhost; RSS reader)",
+          Accept: "application/atom+xml, application/xml, text/xml, */*",
+        },
+      });
+      if (res.ok) return await res.text();
+      lastError = new Error(`HTTP ${res.status}`);
+      // 4xx other than 404/429 won't change on retry.
+      if (res.status < 500 && res.status !== 404 && res.status !== 429) break;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+    }
+    if (attempt < FEED_ATTEMPTS) await new Promise((r) => setTimeout(r, FEED_RETRY_BASE_MS * attempt));
+  }
+  throw lastError ?? new Error("feed fetch failed");
+}
+
 async function fetchChannelFeed(ch: YtChannel): Promise<VideoItem[]> {
   const url = `https://www.youtube.com/feeds/videos.xml?channel_id=${ch.channelId}`;
-  const res = await fetch(url, {
-    signal: AbortSignal.timeout(FEED_TIMEOUT_MS),
-    headers: {
-      "User-Agent": "AI-Pulse/1.0 (+https://localhost; RSS reader)",
-      Accept: "application/atom+xml, application/xml, text/xml, */*",
-    },
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-  const xml = await res.text();
+  const xml = await fetchFeedXml(url);
   const parsed = await parser.parseString(xml);
   const items: VideoItem[] = [];
 
