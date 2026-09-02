@@ -38,8 +38,7 @@ Fonte única: `README.md` + `docs/ARCHITECTURE.md` + `docs/CONFIGURATION.md` +
 - better-sqlite3 >= 13 (raiz, hoisted) é N-API: um único binário serve Node e Electron.
   `npm rebuild better-sqlite3` é no-op; não existe rebuild de ABI no CI. Depois de `npm ci`,
   rode `npx install-electron` (senão o Electron fica sem binário).
-- Scripts por máquina: Windows → `.ps1`, PowerShell 5.1, UTF-8 com BOM. Linux/Omarchy →
-  `.sh`/`.mjs`, LF sem BOM, sempre a partir de `/work/ai-pulse` (btrfs).
+- Scripts: Linux/Omarchy → `.sh`/`.mjs`, LF sem BOM, sempre a partir de `/work/ai-pulse` (btrfs).
 - Config do Hyprland é Lua: regras `o.window` em `packages/widget/linux/hypr/ai-pulse.lua`
   (instalada como `~/.config/hypr/ai-pulse.lua`). Validar com `hyprctl reload && hyprctl configerrors`.
 - Plugin do omarchy-shell vive em `packages/omarchy-plugin/`. Validar com
@@ -55,19 +54,27 @@ Fonte única: `README.md` + `docs/ARCHITECTURE.md` + `docs/CONFIGURATION.md` +
   Bump nos TRÊS `package.json` (raiz, server, widget).
   **Push de tag é gate humano — só com "pode subir" do Fernando.**
 
-## Orquestração (regras do Fernando)
-- Planner: Fable/Opus Plan. Execução: `executor` GLM-5.3 Flash Bypass Low;
-  QA visual: `visao` Grok 4.6 Agent Low; condução: `mini-orquestrador` GLM-5.3 Flash Medium.
-- Máx. 5 executores simultâneos. Sem ultracode. Sem subagente nativo em modelo caro.
-  >30 min sem progresso = parar e reportar. Nunca re-tentar em silêncio.
-- Decisão do Fernando → pergunta de múltipla escolha. Não inventar progresso.
+## Orquestração
+Orquestração: skill **/orquestrar** (`/work/_referencia/orquestracao/skills/orquestrar/SKILL.md`) — hierarquia por host, guarda-corpos, gauntlet com tetos, gate Unity. Lições medidas: `/work/_referencia/orquestracao/LICOES.md`. Regra dos lugares: `/work/_referencia/REGRA-DOS-LUGARES.md`. Loop de qualidade só pela skill.
 
+```yaml
 # gauntlet-gates v1
-- Barra visual: o próprio painel Creators/News Feed do AI Pulse (escolha de 2026-09-01).
-- Loop: construtor → crítico cego (contexto fresco, prints sem rótulo) → A/B binário +
-  maior gap nomeado → volta. Parada: vitória cega ou 5 rodadas; no teto, entregar com gap escrito.
-- Gate duro antes de comparar: `npm run gate` + health 200 + verify-sources +
-  gate-check (unicidade do leaderboard, My Stack resolve, contrato /api/videos).
+pipeline: generico
+gate_duro:
+  comando: npm run gate && curl -sf http://127.0.0.1:3847/api/health
+  # npm run gate = npm run build && node --check packages/web/app.js && node --check packages/widget/renderer/settings.js
+  # [a verificar] verify-sources/gate-check citados em 2026-09-01 não são scripts do package.json;
+  #   existem só como packages/server/scripts/{verify-sources,gate-check}.ts (tsx). gate-check exige
+  #   o server na 3847 (unicidade do leaderboard, My Stack resolve, contrato /api/videos);
+  #   verify-sources bate na rede (HN/Reddit já falharam por fetch/429) — fora do gate até decisão.
+  verde_quando: exit 0 e health 200 (servidor em npm run dev, porta 3847)
+barra_cega:
+  referencia: painel Creators/News Feed do AI Pulse (escolha do Fernando, 2026-09-01) — prints no mesmo viewport
+  critico: visao
+tetos:
+  rodadas: 5
+gate_humano: false   # push de tag é gate humano fora do loop
+```
 
 ## Exceções medidas de modelo
 (nenhuma ainda — registrar aqui: data · tarefa · modelo barato que falhou · evidência ·

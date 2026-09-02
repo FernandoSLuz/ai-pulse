@@ -1,0 +1,7 @@
+{
+  "scripts": {
+    "build": { "command": "npm run build" },
+    "dev":   { "type": "service", "command": "npm run dev", "port": 3847 },
+    "gate":  { "command": "npm run gate && curl -sf http://127.0.0.1:3847/api/health" }
+  }
+}
