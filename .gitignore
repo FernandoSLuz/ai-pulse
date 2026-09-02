@@ -26,12 +26,17 @@ packages/server/data/
 *.exe
 *.blockmap
 *.nsis.7z
+*.AppImage
+*.pacman
+*.deb
+*.rpm
 builder-debug.yml
 builder-effective-config.yaml
 
 # OS / editor
 .DS_Store
 Thumbs.db
+.directory
 .idea/
 .vscode/
 *.swp

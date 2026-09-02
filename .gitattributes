@@ -1,0 +1,10 @@
+# Normalize line endings: LF in the repo and on Linux checkouts; Windows tools
+# that need CRLF can set core.autocrlf=true locally.
+* text=auto eol=lf
+
+# Binary assets
+*.png binary
+*.ico binary
+*.icns binary
+*.jpg binary
+*.db binary
