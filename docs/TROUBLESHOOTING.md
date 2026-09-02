@@ -21,7 +21,8 @@ This guide covers the most common issues with **AI Pulse** and how to fix them. 
 | **Linux:** no tray icon | Your bar has no StatusNotifierItem host running | See [Tray icon missing (Linux)](#tray-icon-missing-linux). On Omarchy make sure the bar's `omarchy.tray` widget is enabled. |
 | **Linux:** `aipulse://` does nothing | The scheme handler isn't registered | `xdg-mime query default x-scheme-handler/aipulse` should print `ai-pulse.desktop`; otherwise run `update-desktop-database ~/.local/share/applications` and restart the app. |
 | **Linux/Hyprland:** leaderboard not docked, or floats anywhere | The Hyprland rule isn't loaded | `hyprctl configerrors`, then re-run `npm run linux:install`. See [Leaderboard not showing](#leaderboard-not-showing). |
-| **Linux:** **Always on top** is greyed out | Expected — Hyprland has no always-on-top | The shipped window rule floats and pins the widget, and the app adds workspace gaps so windows tile beside it. |
+| **Linux:** **Always on top** is greyed out | Expected — Hyprland has no always-on-top | Use the bar panel (default), or in floating-window mode the shipped rule floats and pins the widget. |
+| **Linux:** clicking the bar entry does nothing | The plugin isn't loaded | `omarchy plugin list` should show `fernando.ai-pulse enabled`; else `npm run linux:install` and check `journalctl --user -t omarchy-shell` for QML errors. |
 | **Linux/Hyprland:** windows stay squeezed after AI Pulse crashed | The dock gaps file was left behind | Start AI Pulse again (it clears it on launch), or empty `~/.config/hypr/ai-pulse-dock.lua` and run `hyprctl reload config-only`. |
 | **Linux:** no notifications | No notification daemon is running | `notify-send -a 'AI Pulse' test` should pop a notification; on Omarchy the omarchy-shell notification daemon renders them. |
 | **Linux:** AppImage won't start | FUSE 2 is missing | `sudo pacman -S fuse2` (Arch/Omarchy). |

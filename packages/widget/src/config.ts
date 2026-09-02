@@ -27,11 +27,17 @@ export const LLM_KEY_NAMES: LlmKeyName[] = [
   "TAVILY_API_KEY",
 ];
 
+export type LeaderboardMode = "bar" | "window";
+
 export interface LeaderboardConfig {
+  /** "bar": the omarchy-shell panel (Linux default) — no floating window. "window": the Electron widget. */
+  mode: LeaderboardMode;
   show: boolean;
   dockSide: "left" | "right";
   pinOnTop: boolean;
   rows: number;
+  /** Linux/Hyprland, window mode only: add workspace gaps so tiled windows stay clear of the widget. */
+  reserveSpace: boolean;
 }
 
 export interface AppConfig {
@@ -47,7 +53,14 @@ export const DEFAULT_CONFIG: AppConfig = {
   port: 3847,
   autoLaunch: true,
   startHidden: true,
-  leaderboard: { show: true, dockSide: "right", pinOnTop: false, rows: 25 },
+  leaderboard: {
+    mode: process.platform === "linux" ? "bar" : "window",
+    show: true,
+    dockSide: "right",
+    pinOnTop: false,
+    rows: 25,
+    reserveSpace: false,
+  },
 };
 
 function coerce(raw: unknown): AppConfig {
@@ -65,10 +78,12 @@ function coerce(raw: unknown): AppConfig {
     autoLaunch: obj.autoLaunch ?? DEFAULT_CONFIG.autoLaunch,
     startHidden: obj.startHidden ?? DEFAULT_CONFIG.startHidden,
     leaderboard: {
+      mode: lb.mode === "bar" || lb.mode === "window" ? lb.mode : DEFAULT_CONFIG.leaderboard.mode,
       show: lb.show ?? DEFAULT_CONFIG.leaderboard.show,
       dockSide: lb.dockSide === "left" ? "left" : "right",
       pinOnTop: Boolean(lb.pinOnTop),
       rows: Math.min(Math.max(Number(lb.rows) || DEFAULT_CONFIG.leaderboard.rows, 5), 40),
+      reserveSpace: Boolean(lb.reserveSpace),
     },
   };
 }

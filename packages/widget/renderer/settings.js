@@ -115,6 +115,18 @@ function renderKeys() {
 
 function renderLeaderboard() {
   const lb = state.config.leaderboard;
+  const barPanel = state.barPanelAvailable === true;
+  const windowMode = !barPanel || lb.mode === "window";
+  el("lb-mode-row").classList.toggle("hidden", !barPanel);
+  document.querySelectorAll("#lb-mode button").forEach((b) => {
+    b.classList.toggle("active", b.getAttribute("data-mode") === (windowMode ? "window" : "bar"));
+  });
+  el("lb-blurb").textContent = barPanel && !windowMode
+    ? "Click the AI Pulse entry in your bar to open the leaderboard as a panel. Nothing else on screen moves."
+    : "The ranking widget docked to your screen edge.";
+  ["lb-show-row", "lb-reserve-row"].forEach((id) => el(id).classList.toggle("hidden", !windowMode));
+  el("lb-reserve-row").classList.toggle("hidden", !windowMode || state.platform !== "linux");
+  el("lb-reserve").checked = Boolean(lb.reserveSpace);
   el("lb-show").checked = lb.show;
   el("lb-pin").checked = lb.pinOnTop;
   const pinSupported = state.alwaysOnTopSupported !== false;
@@ -388,6 +400,17 @@ let rowsTimer = null;
 function wireControls() {
   el("lb-show").addEventListener("change", async (e) => {
     state = await api.toggleLeaderboard(e.target.checked);
+    applyState();
+  });
+  document.querySelectorAll("#lb-mode button").forEach((b) => {
+    b.addEventListener("click", async () => {
+      const mode = b.getAttribute("data-mode");
+      state = await api.setPrefs({ leaderboard: { ...state.config.leaderboard, mode } });
+      applyState();
+    });
+  });
+  el("lb-reserve").addEventListener("change", async (e) => {
+    state = await api.setPrefs({ leaderboard: { ...state.config.leaderboard, reserveSpace: e.target.checked } });
     applyState();
   });
   el("lb-pin").addEventListener("change", async (e) => {

@@ -116,9 +116,9 @@ That installs (backing up anything it touches):
 
 | What | Where | Effect |
 | --- | --- | --- |
-| Hyprland window rule | `~/.config/hypr/ai-pulse.lua` + a `require("hypr.ai-pulse")` line in `~/.config/hypr/hyprland.lua` | Floats the leaderboard, pins it to all workspaces, and docks it to the right edge below the bar; the app then writes per-workspace gaps for that monitor into `~/.config/hypr/ai-pulse-dock.lua` so tiled windows sit beside the widget, never under it, with the bar untouched. Hyprland has no always-on-top, so the **Always on top** toggle is disabled on Linux. |
+| Hyprland window rule | `~/.config/hypr/ai-pulse.lua` + a `require("hypr.ai-pulse")` line in `~/.config/hypr/hyprland.lua` | Only used in *Floating window* mode: floats the leaderboard, pins it to all workspaces, and docks it to the right edge below the bar; with "keep tiled windows beside the widget" on, the app also writes per-workspace gaps for that monitor into `~/.config/hypr/ai-pulse-dock.lua`. Hyprland has no always-on-top, so the **Always on top** toggle is disabled on Linux. |
 | Theme hook | `~/.config/omarchy/hooks/theme-set.d/ai-pulse-theme-set` | Tells the server to reload colors when you switch themes (the server also watches the theme directory itself). |
-| Bar widget | `~/.config/omarchy/plugins/fernando.ai-pulse` (enabled after `omarchy.tray`) | Shows the current leaderboard leader in the bar; turns urgent when the server is down or curation is degraded. Left click = dashboard, right click = Settings, middle click = refresh. |
+| Bar widget + panel | `~/.config/omarchy/plugins/fernando.ai-pulse` (enabled after `omarchy.tray`) | Shows the current leader in the bar; turns urgent when the server is down or curation is degraded. Left click opens the **leaderboard panel** (headline, your stack, top models; `j`/`k`, Enter, `R`, `D`, `S`, Esc), right click = Settings, middle click = refresh. This is the default leaderboard on Omarchy; the floating window is optional (Settings → Desktop leaderboard → Mode). |
 
 Packaged builds ship the same integration under `resources/linux` and `resources/omarchy-plugin`: use the tray's **Install Omarchy integration…** entry or run `ai-pulse --install-omarchy-integration` (`--uninstall` reverts).
 

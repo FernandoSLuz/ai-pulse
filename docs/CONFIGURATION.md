@@ -61,7 +61,7 @@ Curation **never silently degrades**. Every run records which provider served it
 The Settings window is organized into these sections:
 
 - **Connections** — all API keys.
-- **Desktop leaderboard** — show/hide, dock left or right, always-on-top, number of rows. **Always-on-top is Windows-only**: on Linux/Hyprland the compositor owns placement and stacking, so the toggle is disabled and the shipped Hyprland rule floats, pins, and docks the widget instead, while the app adds per-workspace gaps on that monitor (`~/.config/hypr/ai-pulse-dock.lua`) so other windows tile beside it (see [INSTALL.md](./INSTALL.md#6-omarchy-integration-optional)).
+- **Desktop leaderboard** — on Linux a **Mode** switch: *Bar panel* (default on Omarchy; the leaderboard opens from the bar widget and nothing moves) or *Floating window* (show/hide, dock side, rows, and an opt-in "keep tiled windows beside the widget" that adds per-workspace gaps via `~/.config/hypr/ai-pulse-dock.lua`). **Always-on-top is Windows-only**: on Hyprland the compositor owns stacking, so the shipped Hyprland rule floats, pins, and docks the window instead (see [INSTALL.md](./INSTALL.md#6-omarchy-integration-optional)).
 - **Startup & service** — Start on login (Windows: an `HKCU` Run entry; Linux: `~/.config/autostart/ai-pulse.desktop`), Start hidden in tray, Server port, and Restart / Stop / Start.
 - **Preferences** — primary model, provider, priority weights (coding / reasoning / speed / cost), budget tier, and notes (the upgrade advisor formerly known as the web "My Stack").
 - **Notifications** — breaking news, new models & leader changes, upgrade suggestions.

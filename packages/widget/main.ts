@@ -1,5 +1,6 @@
 import { app, BrowserWindow, Tray, Menu, Notification, screen, nativeImage, shell, ipcMain } from "electron";
 import path from "node:path";
+import { execFile } from "node:child_process";
 import { ServerSupervisor, type ServerStatus } from "./src/supervisor";
 import {
   loadConfig,
@@ -52,6 +53,8 @@ const updater = new Updater();
 let config: AppConfig = loadConfig();
 
 const dashboardUrl = () => `http://localhost:${config.port}`;
+/** The Electron leaderboard window is wanted only in "window" mode. */
+const leaderboardWindowWanted = () => config.leaderboard.mode === "window" && config.leaderboard.show;
 const leaderboardUrl = () => `http://localhost:${config.port}/widget`;
 const launchedHidden = process.argv.includes("--hidden");
 
@@ -96,10 +99,12 @@ function scheduleHyprlandDock(): void {
   dockTimer = setTimeout(() => {
     dockTimer = null;
     if (shutdownStarted || !leaderboardWindow) return;
-    // Position first, then reserve the strip so tiled windows tile beside the
-    // widget instead of underneath it (a real side dock).
+    // Position first; then, only if the user opted in, add workspace gaps so
+    // tiled windows tile beside the widget instead of underneath it.
     void hyprlandDock(LEADERBOARD_TITLE, WIDGET_WIDTH, config.leaderboard.dockSide, TOP_MARGIN).then(() =>
-      hyprlandReserve(LEADERBOARD_TITLE, WIDGET_WIDTH, config.leaderboard.dockSide, TOP_MARGIN),
+      config.leaderboard.reserveSpace
+        ? hyprlandReserve(LEADERBOARD_TITLE, WIDGET_WIDTH, config.leaderboard.dockSide, TOP_MARGIN)
+        : hyprlandRelease(),
     );
   }, 150);
 }
@@ -158,13 +163,25 @@ function createLeaderboardWindow(): void {
 function showLeaderboard(show: boolean): void {
   config.leaderboard.show = show;
   saveConfig(config);
-  if (show) {
-    createLeaderboardWindow();
-  } else {
-    leaderboardWindow?.close();
+  applyLeaderboardMode();
+  refreshTrayMenu();
+}
+
+/** Create or drop the Electron leaderboard window to match mode + show. */
+function applyLeaderboardMode(): void {
+  if (leaderboardWindowWanted()) {
+    if (!leaderboardWindow && supervisor.getStatus().healthy) createLeaderboardWindow();
+  } else if (leaderboardWindow) {
+    leaderboardWindow.close();
     leaderboardWindow = null;
   }
-  refreshTrayMenu();
+}
+
+/** Ask omarchy-shell to toggle the AI Pulse bar panel (Linux, bar mode). */
+function toggleBarPanel(): void {
+  execFile("omarchy-shell", ["-q", "fernando.ai-pulse", "toggle"], { timeout: 5000 }, (err) => {
+    if (err) console.warn("[Omarchy] bar panel toggle failed:", err.message);
+  });
 }
 
 // --- Settings / control window (the "app view") -----------------------------
@@ -248,10 +265,12 @@ function buildTrayMenu(): Menu {
     { label: "AI Pulse", enabled: false },
     { type: "separator" },
     { label: "Open Settings", click: () => createSettingsWindow() },
-    {
-      label: config.leaderboard.show ? "Hide Leaderboard" : "Show Leaderboard",
-      click: () => showLeaderboard(!config.leaderboard.show),
-    },
+    config.leaderboard.mode === "bar" && isLinux
+      ? { label: "Open Leaderboard (bar panel)", click: () => toggleBarPanel() }
+      : {
+          label: config.leaderboard.show ? "Hide Leaderboard" : "Show Leaderboard",
+          click: () => showLeaderboard(!config.leaderboard.show),
+        },
     { label: "Open Dashboard in Browser", click: () => void shell.openExternal(dashboardUrl()) },
     {
       label:
@@ -385,6 +404,7 @@ function settingsState() {
     platform: process.platform,
     logPath: serverLogPath(),
     alwaysOnTopSupported: !isLinux,
+    barPanelAvailable: isLinux,
     autostartPath: isLinux ? autostartHint() : null,
   };
 }
@@ -420,9 +440,12 @@ function registerIpc(): void {
     const hiddenChanged = typeof prefs.startHidden === "boolean" && prefs.startHidden !== config.startHidden;
     if (typeof prefs.startHidden === "boolean") config.startHidden = prefs.startHidden;
     if (prefs.leaderboard) {
-      config.leaderboard = { ...config.leaderboard, ...prefs.leaderboard };
+      const next = { ...config.leaderboard, ...prefs.leaderboard };
+      if (next.mode !== "bar" && next.mode !== "window") next.mode = config.leaderboard.mode;
+      config.leaderboard = next;
     }
     saveConfig(config);
+    applyLeaderboardMode();
     if (leaderboardWindow) applyLeaderboardBounds(leaderboardWindow.getBounds().height);
     if (!isLinux) leaderboardWindow?.setAlwaysOnTop(config.leaderboard.pinOnTop, "floating");
     if (typeof prefs.autoLaunch === "boolean") setAutoLaunch(prefs.autoLaunch);
@@ -579,7 +602,7 @@ if (!gotLock) {
     supervisor.on("status", (status: ServerStatus) => {
       refreshTrayMenu();
       pushSettingsState();
-      if (status.healthy && config.leaderboard.show && !leaderboardWindow) {
+      if (status.healthy && leaderboardWindowWanted() && !leaderboardWindow) {
         createLeaderboardWindow();
       }
     });

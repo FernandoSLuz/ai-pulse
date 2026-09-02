@@ -37,9 +37,19 @@
     <!-- Leaderboard -->
     <section class="card">
       <div class="card-head"><h2>Desktop leaderboard</h2>
-        <p class="muted">The ranking widget docked to your screen edge.</p></div>
-      <div class="row">
+        <p class="muted" id="lb-blurb">The ranking widget docked to your screen edge.</p></div>
+      <div class="row" id="lb-mode-row">
+        <span class="row-label">Mode</span>
+        <div class="seg" id="lb-mode">
+          <button data-mode="bar">Bar panel</button>
+          <button data-mode="window">Floating window</button>
+        </div>
+      </div>
+      <div class="row" id="lb-show-row">
         <label class="switch"><input type="checkbox" id="lb-show" /><span>Show leaderboard</span></label>
+      </div>
+      <div class="row" id="lb-reserve-row">
+        <label class="switch"><input type="checkbox" id="lb-reserve" /><span>Keep tiled windows beside the widget (adds workspace gaps)</span></label>
       </div>
       <div class="row">
         <span class="row-label">Dock side</span>

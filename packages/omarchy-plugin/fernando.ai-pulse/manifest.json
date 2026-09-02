@@ -6,12 +6,12 @@
   "author": "Fernando Silva da Luz",
   "license": "UNLICENSED",
   "homepage": "https://github.com/FernandoSLuz/ai-pulse",
-  "description": "Current AI model leader and curation health from the local AI Pulse server.",
+  "description": "AI model leader on the bar and the full AI Pulse leaderboard as a popup panel.",
   "kinds": ["bar-widget"],
-  "entryPoints": { "barWidget": "BarWidget.qml" },
+  "entryPoints": { "barWidget": "AiPulse.qml" },
   "barWidget": {
     "displayName": "AI Pulse",
-    "description": "Leader of the AI Pulse leaderboard; turns urgent when the server is down or curation is degraded. Left = dashboard, right = settings, middle = refresh.",
+    "description": "Leader of the AI Pulse leaderboard; turns urgent when the server is down or curation is degraded. Left = leaderboard panel, right = settings, middle = refresh.",
     "category": "Info",
     "aliases": ["ai-pulse", "aipulse", "models", "llm", "leaderboard"],
     "allowMultiple": false,
@@ -20,7 +20,8 @@
       "port": 3847,
       "interval": 60,
       "showLeader": true,
-      "maxChars": 18
+      "maxChars": 18,
+      "rows": 25
     },
     "schema": [
       {
@@ -41,24 +42,34 @@
         "max": 3600,
         "step": 5,
         "defaultValue": 60,
-        "description": "Rankings only change when a poll lands; a minute is plenty."
+        "description": "Rankings only change when a poll lands; a minute is plenty. Opening the panel refreshes immediately."
+      },
+      {
+        "key": "rows",
+        "type": "integer",
+        "label": "Rows in the panel",
+        "min": 5,
+        "max": 40,
+        "step": 1,
+        "defaultValue": 25,
+        "description": "How many models the leaderboard panel lists (your own picks always show)."
       },
       {
         "key": "showLeader",
         "type": "boolean",
-        "label": "Show leader name",
+        "label": "Show leader name on the bar",
         "defaultValue": true,
         "description": "Turn off for an icon-only reading that just tracks health."
       },
       {
         "key": "maxChars",
         "type": "integer",
-        "label": "Max name length",
+        "label": "Max name length on the bar",
         "min": 6,
         "max": 40,
         "step": 1,
         "defaultValue": 18,
-        "description": "Longer model names are ellipsized on the bar; the tooltip has the full name."
+        "description": "Longer model names are ellipsized on the bar; the panel has the full name."
       }
     ]
   }
