@@ -260,12 +260,15 @@ export class ServerSupervisor extends EventEmitter {
     this.emitStatus();
   }
 
+  /** True only when an AI Pulse server (not just any listener) answers on our port. */
   private async pingHealth(): Promise<boolean> {
     try {
       const res = await fetch(`http://127.0.0.1:${this.port}/api/health`, {
         signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS),
       });
-      return res.ok;
+      if (!res.ok) return false;
+      const body = (await res.json()) as { app?: string };
+      return body.app === "ai-pulse";
     } catch {
       return false;
     }

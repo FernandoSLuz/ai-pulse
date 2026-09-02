@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, WebSocket } from "ws";
 import http from "node:http";
+import fs from "node:fs";
 
 import {
   getDb,
@@ -56,8 +57,41 @@ import type { ChangeEvent, NewsItem, NewsPeriod, StackRole, WsMessage } from "./
 import { isNewsPeriod } from "./types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.join(__dirname, "..", "..", "..", ".env") });
+
+// Dev-only .env: the first readable candidate wins. The desktop app injects
+// keys from its own config.json instead and never ships a .env.
+const ENV_CANDIDATES = [
+  process.env.AI_PULSE_ENV_FILE,
+  process.env.AI_PULSE_RESOURCE_DIR ? path.join(process.env.AI_PULSE_RESOURCE_DIR, ".env") : undefined,
+  path.join(process.cwd(), ".env"),
+  path.join(__dirname, "..", "..", "..", ".env"), // packages/server/{src,dist} -> repo root
+].filter((p): p is string => Boolean(p));
+for (const candidate of ENV_CANDIDATES) {
+  if (!fs.existsSync(candidate)) continue;
+  dotenv.config({ path: candidate });
+  console.log(`[Env] Loaded ${candidate}`);
+  break;
+}
+
+/** App version for /api/health: the desktop app passes its own; standalone reads package.json. */
+function resolveVersion(): string {
+  if (process.env.AI_PULSE_VERSION) return process.env.AI_PULSE_VERSION;
+  for (const candidate of [path.join(__dirname, "..", "package.json"), path.join(__dirname, "..", "..", "package.json")]) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(candidate, "utf8")) as { name?: string; version?: string };
+      if (parsed.name?.includes("ai-pulse") && parsed.version) return parsed.version;
+    } catch {
+      /* try the next one */
+    }
+  }
+  return "unknown";
+}
+const APP_VERSION = resolveVersion();
+
 const PORT = Number(process.env.PORT) || 3847;
+// Loopback only by default: the API carries no auth, and on Linux nothing
+// else stands between it and the LAN. Set AI_PULSE_BIND_HOST=0.0.0.0 to expose it.
+const BIND_HOST = process.env.AI_PULSE_BIND_HOST || "127.0.0.1";
 const AA_KEY = process.env.AA_API_KEY;
 const GROQ_KEY = process.env.GROQ_API_KEY;
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
@@ -84,7 +118,7 @@ const chatEnv = {
 getDb();
 
 const app = express();
-app.use(cors());
+app.use(cors({ origin: [`http://localhost:${PORT}`, `http://127.0.0.1:${PORT}`] }));
 app.use(express.json());
 app.use(express.static(webRoot));
 
@@ -116,6 +150,9 @@ app.get("/api/health", (_req, res) => {
   const analyst = getAnalystStatus(analystEnv);
   res.json({
     ok: true,
+    app: "ai-pulse",
+    version: APP_VERSION,
+    pid: process.pid,
     port: PORT,
     models: getAllModels().length,
     poll: health,
@@ -619,20 +656,45 @@ const benchmarkLock = { running: false };
 const newsLock = { running: false };
 const videosLock = { running: false };
 
-setInterval(withPollGuard("benchmarks", benchmarkLock, pollBenchmarks), AA_POLL);
-setInterval(withPollGuard("news", newsLock, pollNews), RSS_POLL);
-setInterval(withPollGuard("videos", videosLock, pollVideos), YT_POLL);
-setInterval(() => {
-  const health = evaluatePollHealth(AA_POLL);
-  if (health.stale) {
-    console.warn(`[Poll Health] ${health.warning}`);
-    try {
-      broadcast({ type: "rankings", payload: buildRankingsSnapshot(getAllModels(), AA_POLL) });
-    } catch (err) {
-      console.error("[Poll Health] Broadcast failed:", err);
+const timers: NodeJS.Timeout[] = [
+  setInterval(withPollGuard("benchmarks", benchmarkLock, pollBenchmarks), AA_POLL),
+  setInterval(withPollGuard("news", newsLock, pollNews), RSS_POLL),
+  setInterval(withPollGuard("videos", videosLock, pollVideos), YT_POLL),
+  setInterval(() => {
+    const health = evaluatePollHealth(AA_POLL);
+    if (health.stale) {
+      console.warn(`[Poll Health] ${health.warning}`);
+      try {
+        broadcast({ type: "rankings", payload: buildRankingsSnapshot(getAllModels(), AA_POLL) });
+      } catch (err) {
+        console.error("[Poll Health] Broadcast failed:", err);
+      }
     }
+  }, Math.min(AA_POLL / 4, 30 * 60_000)),
+];
+
+// Graceful shutdown: the desktop supervisor sends SIGTERM (POSIX) and Ctrl-C
+// sends SIGINT. Stop polling, drop clients, and close SQLite so the WAL is
+// checkpointed instead of being left for the next open to recover.
+let shuttingDown = false;
+function shutdown(signal: NodeJS.Signals): void {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[Server] ${signal} received — shutting down`);
+  for (const t of timers) clearInterval(t);
+  for (const client of clients) client.terminate();
+  wss.close();
+  server.close();
+  try {
+    getDb().close();
+  } catch (err) {
+    console.error("[Server] DB close failed:", err);
   }
-}, Math.min(AA_POLL / 4, 30 * 60_000));
+  // Don't wait on lingering keep-alive sockets or in-flight fetches.
+  setTimeout(() => process.exit(0), 500).unref();
+}
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
 
 server.on("error", (err) => {
   const code = (err as NodeJS.ErrnoException).code;
@@ -642,7 +704,7 @@ server.on("error", (err) => {
   process.exit(1);
 });
 
-server.listen(PORT, () => {
-  console.log(`AI Pulse server running at http://localhost:${PORT}`);
+server.listen(PORT, BIND_HOST, () => {
+  console.log(`AI Pulse server v${APP_VERSION} running at http://${BIND_HOST}:${PORT}`);
   bootstrap().catch((err) => console.error("Bootstrap failed:", err));
 });
