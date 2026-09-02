@@ -170,6 +170,6 @@ export interface NotificationPrefs {
 }
 
 export interface WsMessage {
-  type: "rankings" | "news" | "briefing" | "stack" | "status" | "videos" | "ai_picks";
+  type: "rankings" | "news" | "briefing" | "stack" | "status" | "videos" | "ai_picks" | "theme";
   payload: unknown;
 }

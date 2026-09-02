@@ -53,6 +53,7 @@ import { runChat } from "./chat/engine.js";
 import { listAvailableModels } from "./chat/models.js";
 import { resolveSearchBackend } from "./chat/search-agent.js";
 import type { ChatMessage } from "./chat/types.js";
+import { initTheme, getTheme, reloadTheme, onThemeChange, stopTheme } from "./theme.js";
 import type { ChangeEvent, NewsItem, NewsPeriod, StackRole, WsMessage } from "./types.js";
 import { isNewsPeriod } from "./types.js";
 
@@ -116,6 +117,8 @@ const chatEnv = {
 };
 
 getDb();
+initTheme();
+onThemeChange((theme) => broadcast({ type: "theme", payload: { name: theme.name, version: theme.version, available: theme.available } }));
 
 const app = express();
 app.use(cors({ origin: [`http://localhost:${PORT}`, `http://127.0.0.1:${PORT}`] }));
@@ -143,6 +146,21 @@ wss.on("connection", (ws) => {
       payload: { connected: true, models: getAllModels().length },
     } satisfies WsMessage),
   );
+});
+
+// Omarchy theme bridge: the dashboard and the leaderboard link /theme.css after
+// their own stylesheet; it is empty when no Omarchy palette is available.
+app.get("/theme.css", (_req, res) => {
+  const theme = getTheme();
+  res.type("text/css").set("Cache-Control", "no-cache").set("ETag", `"theme-${theme.version}"`).send(theme.css);
+});
+app.get("/api/theme", (_req, res) => {
+  const { css: _css, ...info } = getTheme();
+  res.json(info);
+});
+app.post("/api/theme/reload", (_req, res) => {
+  const { css: _css, ...info } = reloadTheme();
+  res.json(info);
 });
 
 app.get("/api/health", (_req, res) => {
@@ -682,6 +700,7 @@ function shutdown(signal: NodeJS.Signals): void {
   shuttingDown = true;
   console.log(`[Server] ${signal} received — shutting down`);
   for (const t of timers) clearInterval(t);
+  stopTheme();
   for (const client of clients) client.terminate();
   wss.close();
   server.close();

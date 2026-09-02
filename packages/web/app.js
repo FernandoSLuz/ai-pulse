@@ -29,6 +29,14 @@ const SORTABLE = {
   accessibilityScore: { key: "accessibilityScore", type: "number", defaultDir: "desc", label: "Access" },
 };
 
+
+// Omarchy theme bridge: the server pushes {type:"theme"} when the palette
+// changes; re-fetch /theme.css without a page reload.
+function reloadThemeCss(version) {
+  const link = document.getElementById("theme-css");
+  if (link) link.href = "/theme.css?v=" + (version || Date.now());
+}
+
 function sortModels(models) {
   const col = SORTABLE[state.sortKey];
   if (!col) return models;
@@ -71,6 +79,14 @@ function onSortHeaderClick(key) {
 function connectWs() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   const ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.addEventListener("message", (ev) => {
+    try {
+      const msg = JSON.parse(ev.data);
+      if (msg.type === "theme") reloadThemeCss(msg.payload && msg.payload.version);
+    } catch {
+      /* not our message */
+    }
+  });
 
   ws.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);

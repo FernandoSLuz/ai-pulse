@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <title>AI Pulse Widget</title>
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" id="theme-css" href="/theme.css" />
 </head>
 <body class="widget-body">
   <div class="widget-container" id="widget-root">
@@ -445,6 +446,17 @@
     const proto = location.protocol === "https:" ? "wss" : "ws";
     function connectWs() {
       const ws = new WebSocket(`${proto}://${location.host}/ws`);
+      ws.addEventListener("message", (ev) => {
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg.type === "theme") {
+            const link = document.getElementById("theme-css");
+            if (link) link.href = "/theme.css?v=" + ((msg.payload && msg.payload.version) || Date.now());
+          }
+        } catch {
+          /* not our message */
+        }
+      });
       ws.onmessage = (ev) => {
         const msg = JSON.parse(ev.data);
         if (msg.type === "rankings") { rankings = msg.payload; render(); }
