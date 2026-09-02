@@ -11,7 +11,16 @@ import {
 } from "./src/config";
 import { serverLogPath, settingsHtml, settingsPreload, leaderboardPreload } from "./src/paths";
 import { Updater } from "./src/updater";
-import { isLinux, DESKTOP_FILE, PROTOCOL, applyAutoLaunch, installDesktopIntegration, hyprlandDock } from "./src/platform";
+import {
+  isLinux,
+  DESKTOP_FILE,
+  PROTOCOL,
+  applyAutoLaunch,
+  installDesktopIntegration,
+  hyprlandDock,
+  hyprlandReserve,
+  hyprlandRelease,
+} from "./src/platform";
 
 // Set the app name before anything reads app.getPath("userData"), so config,
 // data, and logs live under %APPDATA%\AI Pulse / ~/.config/AI Pulse (not the
@@ -84,7 +93,11 @@ function scheduleHyprlandDock(): void {
   if (dockTimer) clearTimeout(dockTimer);
   dockTimer = setTimeout(() => {
     dockTimer = null;
-    void hyprlandDock(LEADERBOARD_TITLE, WIDGET_WIDTH, config.leaderboard.dockSide, TOP_MARGIN);
+    // Position first, then reserve the strip so tiled windows tile beside the
+    // widget instead of underneath it (a real side dock).
+    void hyprlandDock(LEADERBOARD_TITLE, WIDGET_WIDTH, config.leaderboard.dockSide, TOP_MARGIN).then(() =>
+      hyprlandReserve(LEADERBOARD_TITLE, WIDGET_WIDTH, config.leaderboard.dockSide),
+    );
   }, 150);
 }
 
@@ -135,6 +148,7 @@ function createLeaderboardWindow(): void {
   });
   leaderboardWindow.on("closed", () => {
     leaderboardWindow = null;
+    if (isLinux) void hyprlandRelease(WIDGET_WIDTH);
   });
 }
 
@@ -299,6 +313,7 @@ async function quitAll(): Promise<void> {
   } catch {
     /* best effort */
   }
+  if (isLinux) await hyprlandRelease(WIDGET_WIDTH).catch(() => undefined);
   leaderboardWindow?.destroy();
   settingsWindow?.destroy();
   tray?.destroy();
@@ -511,6 +526,8 @@ if (!gotLock) {
     updater.init();
 
     createTray();
+    // A crashed previous instance may have left its dock reservation behind.
+    if (isLinux) void hyprlandRelease(WIDGET_WIDTH);
     supervisor.start();
 
     // Apply auto-launch registration to match saved config on every start

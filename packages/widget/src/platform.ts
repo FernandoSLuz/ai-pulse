@@ -228,3 +228,52 @@ export async function hyprlandDock(title: string, width: number, side: "left" | 
   const result = await dispatch([luaCall]);
   if (!/^ok/m.test(result)) await dispatch(legacy);
 }
+
+interface HyprMonitorFull extends HyprMonitor {
+  name: string;
+}
+
+function hyprEval(lua: string): Promise<string> {
+  return new Promise((resolve) => execFile("hyprctl", ["eval", lua], { timeout: 3000 }, (_err, out) => resolve(String(out ?? ""))));
+}
+
+function reservedLua(output: string, left: number, right: number): string {
+  // `reserved` only touches the config-level reservation; layer-shell zones
+  // (the bar) are tracked separately by Hyprland and stay intact.
+  return `hl.monitor({ output = ${JSON.stringify(output)}, reserved = { top = 0, bottom = 0, left = ${left}, right = ${right} } })`;
+}
+
+/**
+ * Turn the docked leaderboard into a real side dock: reserve its width on
+ * the monitor it sits on so tiled windows never end up underneath it.
+ * Any previous reservation of ours on other monitors is released first
+ * (the window may have moved). Hyprland >= 0.55 only (Lua eval).
+ */
+export async function hyprlandReserve(title: string, width: number, side: "left" | "right"): Promise<void> {
+  if (!isHyprland) return;
+  const clients = await hyprctlJson<HyprClient[]>(["clients"]);
+  const win = clients?.find((c) => c.class === DESKTOP_ID && c.title === title);
+  const monitors = await hyprctlJson<HyprMonitorFull[]>(["monitors"]);
+  if (!win || !monitors) return;
+  const target = monitors.find((m) => m.id === win.monitor);
+  for (const m of monitors) {
+    const [l, , r] = m.reserved ?? [0, 0, 0, 0];
+    const mine = m === target;
+    const wantLeft = mine && side === "left" ? width : 0;
+    const wantRight = mine && side === "right" ? width : 0;
+    const ours = l === width || r === width; // only ever release what we reserved
+    if ((mine && (l !== wantLeft || r !== wantRight)) || (!mine && ours)) {
+      await hyprEval(reservedLua(m.name, wantLeft, wantRight));
+    }
+  }
+}
+
+/** Release every reservation of `width` px we hold (leaderboard hidden or app quitting). */
+export async function hyprlandRelease(width: number): Promise<void> {
+  if (!isHyprland) return;
+  const monitors = await hyprctlJson<HyprMonitorFull[]>(["monitors"]);
+  for (const m of monitors ?? []) {
+    const [l, , r] = m.reserved ?? [0, 0, 0, 0];
+    if (l === width || r === width) await hyprEval(reservedLua(m.name, 0, 0));
+  }
+}
