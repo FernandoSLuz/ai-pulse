@@ -11,7 +11,8 @@
     "app": "npm run build && npm run start -w @ai-pulse/widget",
     "widget": "npm run start -w @ai-pulse/widget",
     "dist:linux": "npm run dist:linux -w @ai-pulse/widget",
-    "gate": "npm run build && node --check packages/web/app.js && node --check packages/widget/renderer/settings.js"
+    "gate": "npm run build && node --check packages/web/app.js && node --check packages/widget/renderer/settings.js",
+    "linux:install": "npm run linux:install -w @ai-pulse/widget"
   },
   "version": "1.0.0-rc.5",
   "engines": {

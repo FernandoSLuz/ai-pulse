@@ -1,0 +1,11 @@
+#!/bin/bash
+# Omarchy theme-set hook: tell a running AI Pulse server to re-read the palette.
+# Installed with: omarchy hook install theme-set <this file>
+# The server also watches the theme directory; this covers the cases inotify misses.
+CONFIG="$HOME/.config/AI Pulse/config.json"
+PORT=3847
+if [[ -f $CONFIG ]] && command -v jq >/dev/null 2>&1; then
+  PORT=$(jq -r '.port // 3847' "$CONFIG" 2>/dev/null || echo 3847)
+fi
+curl -fsS --max-time 2 -X POST "http://127.0.0.1:${PORT}/api/theme/reload" >/dev/null 2>&1 || true
+exit 0

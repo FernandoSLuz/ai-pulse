@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "id": "fernando.ai-pulse",
+  "name": "AI Pulse",
+  "version": "1.1.0",
+  "author": "Fernando Silva da Luz",
+  "license": "UNLICENSED",
+  "homepage": "https://github.com/FernandoSLuz/ai-pulse",
+  "description": "Current AI model leader and curation health from the local AI Pulse server.",
+  "kinds": ["bar-widget"],
+  "entryPoints": { "barWidget": "BarWidget.qml" },
+  "barWidget": {
+    "displayName": "AI Pulse",
+    "description": "Leader of the AI Pulse leaderboard; turns urgent when the server is down or curation is degraded. Left = dashboard, right = settings, middle = refresh.",
+    "category": "Info",
+    "aliases": ["ai-pulse", "aipulse", "models", "llm", "leaderboard"],
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "port": 3847,
+      "interval": 60,
+      "showLeader": true,
+      "maxChars": 18
+    },
+    "schema": [
+      {
+        "key": "port",
+        "type": "integer",
+        "label": "Server port",
+        "min": 1,
+        "max": 65535,
+        "step": 1,
+        "defaultValue": 3847,
+        "description": "The AI Pulse background service port (Settings → Startup & service)."
+      },
+      {
+        "key": "interval",
+        "type": "integer",
+        "label": "Refresh interval (seconds)",
+        "min": 5,
+        "max": 3600,
+        "step": 5,
+        "defaultValue": 60,
+        "description": "Rankings only change when a poll lands; a minute is plenty."
+      },
+      {
+        "key": "showLeader",
+        "type": "boolean",
+        "label": "Show leader name",
+        "defaultValue": true,
+        "description": "Turn off for an icon-only reading that just tracks health."
+      },
+      {
+        "key": "maxChars",
+        "type": "integer",
+        "label": "Max name length",
+        "min": 6,
+        "max": 40,
+        "step": 1,
+        "defaultValue": 18,
+        "description": "Longer model names are ellipsized on the bar; the tooltip has the full name."
+      }
+    ]
+  }
+}

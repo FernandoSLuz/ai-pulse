@@ -16,7 +16,9 @@
     "dist:dir": "npm run build && electron-builder --win --dir",
     "dist:linux": "npm run build && electron-builder --linux",
     "dist:linux:ci": "npm run build && electron-builder --linux --publish never",
-    "dist:linux:dir": "npm run build && electron-builder --linux --dir"
+    "dist:linux:dir": "npm run build && electron-builder --linux --dir",
+    "linux:install": "node scripts/linux-install.mjs",
+    "linux:uninstall": "node scripts/linux-install.mjs --uninstall"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
