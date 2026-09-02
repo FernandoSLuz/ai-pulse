@@ -11,7 +11,7 @@ import {
 } from "./src/config";
 import { serverLogPath, settingsHtml, settingsPreload, leaderboardPreload } from "./src/paths";
 import { Updater } from "./src/updater";
-import { isLinux, DESKTOP_FILE, PROTOCOL, applyAutoLaunch, installDesktopIntegration } from "./src/platform";
+import { isLinux, DESKTOP_FILE, PROTOCOL, applyAutoLaunch, installDesktopIntegration, hyprlandDock } from "./src/platform";
 
 // Set the app name before anything reads app.getPath("userData"), so config,
 // data, and logs live under %APPDATA%\AI Pulse / ~/.config/AI Pulse (not the
@@ -24,6 +24,7 @@ if (isLinux) app.setDesktopName(DESKTOP_FILE);
 
 const WIDGET_WIDTH = 760;
 const TOP_MARGIN = 12;
+const LEADERBOARD_TITLE = "AI Pulse Widget";
 // Wayland exposes no work area (Omarchy's bar is invisible to xdg clients), so
 // reserve the bar height ourselves; the Hyprland rule places the window at y=38.
 const LINUX_TOP_INSET = 38;
@@ -66,13 +67,25 @@ function applyLeaderboardBounds(height: number): void {
   const area = workArea();
   const h = Math.min(Math.max(height, 200), maxWidgetHeight());
   if (isLinux) {
-    // Wayland forbids client-side positioning; the Hyprland rule docks the
-    // window, we only follow the content height.
+    // Wayland forbids client-side positioning: the Hyprland rule docks the
+    // window on map, we follow the content height and then ask Hyprland to
+    // re-dock (it keeps the window center on client resizes).
     leaderboardWindow.setSize(WIDGET_WIDTH, h);
+    scheduleHyprlandDock();
     return;
   }
   const x = config.leaderboard.dockSide === "right" ? area.x + area.width - WIDGET_WIDTH : area.x;
   leaderboardWindow.setBounds({ x, y: area.y + TOP_MARGIN, width: WIDGET_WIDTH, height: h });
+}
+
+let dockTimer: NodeJS.Timeout | null = null;
+
+function scheduleHyprlandDock(): void {
+  if (dockTimer) clearTimeout(dockTimer);
+  dockTimer = setTimeout(() => {
+    dockTimer = null;
+    void hyprlandDock(LEADERBOARD_TITLE, WIDGET_WIDTH, config.leaderboard.dockSide, TOP_MARGIN);
+  }, 150);
 }
 
 function createLeaderboardWindow(): void {
@@ -87,7 +100,7 @@ function createLeaderboardWindow(): void {
     x: config.leaderboard.dockSide === "right" ? area.x + area.width - WIDGET_WIDTH : area.x,
     y: area.y + TOP_MARGIN,
     // Stable title: the Hyprland rule matches it (static rules evaluate at map time).
-    title: "AI Pulse Widget",
+    title: LEADERBOARD_TITLE,
     frame: false,
     transparent: true,
     // Always-on-top is a Wayland no-op; Hyprland float+pin rules take over on Linux.
@@ -116,7 +129,10 @@ function createLeaderboardWindow(): void {
     return { action: "deny" };
   });
   leaderboardWindow.loadURL(leaderboardUrl());
-  leaderboardWindow.once("ready-to-show", () => leaderboardWindow?.show());
+  leaderboardWindow.once("ready-to-show", () => {
+    leaderboardWindow?.show();
+    if (isLinux) scheduleHyprlandDock();
+  });
   leaderboardWindow.on("closed", () => {
     leaderboardWindow = null;
   });
@@ -512,4 +528,11 @@ if (!gotLock) {
   app.on("before-quit", () => {
     isQuitting = true;
   });
+
+  // A plain SIGTERM (systemd stopping the session scope, `kill`, Ctrl-C in a
+  // terminal) must take the supervised server down with us instead of
+  // orphaning it on the port.
+  for (const signal of ["SIGTERM", "SIGINT"] as const) {
+    process.on(signal, () => void quitAll());
+  }
 }

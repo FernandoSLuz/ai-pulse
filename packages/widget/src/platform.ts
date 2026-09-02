@@ -17,6 +17,11 @@ import type { AppConfig } from "./config";
 
 export const isLinux = process.platform === "linux";
 export const isWindows = process.platform === "win32";
+// HYPRLAND_INSTANCE_SIGNATURE is only exported to processes started by the
+// compositor; a terminal/IDE launch may lack it, so also accept the desktop name
+// (hyprctl finds a lone instance on its own).
+export const isHyprland =
+  isLinux && (Boolean(process.env.HYPRLAND_INSTANCE_SIGNATURE) || /hyprland/i.test(process.env.XDG_CURRENT_DESKTOP ?? ""));
 export const DESKTOP_ID = "ai-pulse";
 export const DESKTOP_FILE = `${DESKTOP_ID}.desktop`;
 export const PROTOCOL = "aipulse";
@@ -115,7 +120,7 @@ export async function installDesktopIntegration(): Promise<void> {
       `Exec=${execLine([])} %U`,
       `Icon=${DESKTOP_ID}`,
       "Terminal=false",
-      "Categories=Utility;Network;",
+      "Categories=Utility;",
       `StartupWMClass=${DESKTOP_ID}`,
       `MimeType=x-scheme-handler/${PROTOCOL};`,
     ]);
@@ -163,4 +168,63 @@ export function applyAutoLaunch(config: AppConfig): void {
       args: config.startHidden ? ["--hidden"] : [],
     });
   }
+}
+
+interface HyprClient {
+  class: string;
+  title: string;
+  monitor: number;
+}
+
+interface HyprMonitor {
+  id: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  scale: number;
+  reserved?: number[]; // [left, top, right, bottom] — the bar's exclusive zone
+}
+
+function hyprctlJson<T>(args: string[]): Promise<T | null> {
+  return new Promise((resolve) => {
+    execFile("hyprctl", ["-j", ...args], { timeout: 3000 }, (err, out) => {
+      if (err) return resolve(null);
+      try {
+        resolve(JSON.parse(out) as T);
+      } catch {
+        resolve(null);
+      }
+    });
+  });
+}
+
+/**
+ * Dock a window to a screen edge just below the bar via Hyprland's IPC.
+ * The static window rule places the leaderboard on map, but Hyprland keeps
+ * a floating window's *center* when the client later resizes itself — and
+ * the leaderboard resizes to its content — so re-dock after every resize.
+ * No-op outside Hyprland; failures are silent (the rule still applies).
+ */
+export async function hyprlandDock(title: string, width: number, side: "left" | "right", gap: number): Promise<void> {
+  if (!isHyprland) return;
+  const clients = await hyprctlJson<HyprClient[]>(["clients"]);
+  const win = clients?.find((c) => c.class === DESKTOP_ID && c.title === title);
+  if (!win) return;
+  const monitors = await hyprctlJson<HyprMonitor[]>(["monitors"]);
+  const mon = monitors?.find((m) => m.id === win.monitor) ?? monitors?.[0];
+  if (!mon) return;
+  const logicalWidth = Math.round(mon.width / (mon.scale || 1));
+  const x = side === "right" ? mon.x + logicalWidth - width : mon.x;
+  const y = mon.y + (mon.reserved?.[1] ?? 0) + gap;
+  const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const selector = `title:^(${escaped})$`;
+  // Hyprland >= 0.55 speaks Lua on the dispatch socket; older versions take the
+  // classic "movewindowpixel exact X Y,selector" text. Try Lua first.
+  const luaCall = `hl.dsp.window.move({ exact = true, x = ${x}, y = ${y}, window = ${JSON.stringify(selector)} })`;
+  const legacy = ["movewindowpixel", `exact ${x} ${y},${selector}`];
+  const dispatch = (args: string[]) =>
+    new Promise<string>((resolve) => execFile("hyprctl", ["dispatch", ...args], { timeout: 3000 }, (_err, out) => resolve(String(out ?? ""))));
+  const result = await dispatch([luaCall]);
+  if (!/^ok/m.test(result)) await dispatch(legacy);
 }
