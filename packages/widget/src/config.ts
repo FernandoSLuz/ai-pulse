@@ -34,6 +34,8 @@ export interface LeaderboardConfig {
   mode: LeaderboardMode;
   show: boolean;
   dockSide: "left" | "right";
+  /** Linux/Hyprland: monitor name to dock to (e.g. "DP-2"); empty = follow the focused one. */
+  monitor: string;
   pinOnTop: boolean;
   rows: number;
   /** Linux/Hyprland, window mode only: add workspace gaps so tiled windows stay clear of the widget. */
@@ -57,6 +59,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     mode: process.platform === "linux" ? "bar" : "window",
     show: true,
     dockSide: "right",
+    monitor: "",
     pinOnTop: false,
     rows: 25,
     reserveSpace: false,
@@ -81,6 +84,7 @@ function coerce(raw: unknown): AppConfig {
       mode: lb.mode === "bar" || lb.mode === "window" ? lb.mode : DEFAULT_CONFIG.leaderboard.mode,
       show: lb.show ?? DEFAULT_CONFIG.leaderboard.show,
       dockSide: lb.dockSide === "left" ? "left" : "right",
+      monitor: typeof lb.monitor === "string" ? lb.monitor.trim() : "",
       pinOnTop: Boolean(lb.pinOnTop),
       rows: Math.min(Math.max(Number(lb.rows) || DEFAULT_CONFIG.leaderboard.rows, 5), 40),
       reserveSpace: Boolean(lb.reserveSpace),

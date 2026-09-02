@@ -19,8 +19,9 @@ import {
   applyAutoLaunch,
   installDesktopIntegration,
   hyprlandDock,
-  hyprlandReserve,
-  hyprlandRelease,
+  hyprlandRules,
+  hyprlandMonitorNames,
+  LEADERBOARD_TITLE,
   runOmarchyInstaller,
 } from "./src/platform";
 
@@ -35,7 +36,6 @@ if (isLinux) app.setDesktopName(DESKTOP_FILE);
 
 const WIDGET_WIDTH = 760;
 const TOP_MARGIN = 12;
-const LEADERBOARD_TITLE = "AI Pulse Widget";
 // Wayland exposes no work area (Omarchy's bar is invisible to xdg clients), so
 // reserve the bar height ourselves; the Hyprland rule places the window at y=38.
 const LINUX_TOP_INSET = 38;
@@ -101,10 +101,9 @@ function scheduleHyprlandDock(): void {
     if (shutdownStarted || !leaderboardWindow) return;
     // Position first; then, only if the user opted in, add workspace gaps so
     // tiled windows tile beside the widget instead of underneath it.
-    void hyprlandDock(LEADERBOARD_TITLE, WIDGET_WIDTH, config.leaderboard.dockSide, TOP_MARGIN).then(() =>
-      config.leaderboard.reserveSpace
-        ? hyprlandReserve(LEADERBOARD_TITLE, WIDGET_WIDTH, config.leaderboard.dockSide, TOP_MARGIN)
-        : hyprlandRelease(),
+    const { dockSide, monitor, reserveSpace } = config.leaderboard;
+    void hyprlandDock(LEADERBOARD_TITLE, WIDGET_WIDTH, dockSide, TOP_MARGIN, monitor).then(() =>
+      hyprlandRules({ active: true, monitor, side: dockSide, width: WIDGET_WIDTH, gap: TOP_MARGIN, reserveSpace }),
     );
   }, 150);
 }
@@ -156,7 +155,7 @@ function createLeaderboardWindow(): void {
   });
   leaderboardWindow.on("closed", () => {
     leaderboardWindow = null;
-    if (isLinux) void hyprlandRelease();
+    if (isLinux) void applyHyprlandRules(false);
   });
 }
 
@@ -165,6 +164,12 @@ function showLeaderboard(show: boolean): void {
   saveConfig(config);
   applyLeaderboardMode();
   refreshTrayMenu();
+}
+
+/** Rewrite the generated Hyprland rules from the current config. */
+function applyHyprlandRules(active: boolean): Promise<void> {
+  const { dockSide, monitor, reserveSpace } = config.leaderboard;
+  return hyprlandRules({ active, monitor, side: dockSide, width: WIDGET_WIDTH, gap: TOP_MARGIN, reserveSpace });
 }
 
 /** Create or drop the Electron leaderboard window to match mode + show. */
@@ -372,7 +377,7 @@ async function teardown(): Promise<void> {
   } catch {
     /* best effort */
   }
-  if (isLinux) await hyprlandRelease().catch(() => undefined);
+  if (isLinux) await hyprlandRules({ active: false, monitor: "", side: "right", width: WIDGET_WIDTH, gap: TOP_MARGIN, reserveSpace: false }).catch(() => undefined);
   leaderboardWindow?.destroy();
   leaderboardWindow = null;
   settingsWindow?.destroy();
@@ -405,8 +410,20 @@ function settingsState() {
     logPath: serverLogPath(),
     alwaysOnTopSupported: !isLinux,
     barPanelAvailable: isLinux,
+    monitors: knownMonitors,
     autostartPath: isLinux ? autostartHint() : null,
   };
+}
+
+// Monitor names for the Settings dropdown, refreshed whenever the renderer
+// asks for state (hyprctl is async, but settingsState() has to stay sync).
+let knownMonitors: string[] = [];
+function refreshMonitors(): void {
+  void hyprlandMonitorNames().then((names) => {
+    if (names.join("|") === knownMonitors.join("|")) return;
+    knownMonitors = names;
+    pushSettingsState();
+  });
 }
 
 function autostartHint(): string {
@@ -421,7 +438,10 @@ function pushSettingsState(): void {
 }
 
 function registerIpc(): void {
-  ipcMain.handle("settings:getState", () => settingsState());
+  ipcMain.handle("settings:getState", () => {
+    refreshMonitors();
+    return settingsState();
+  });
 
   ipcMain.handle("settings:setKey", (_e, name: string, value: string) => {
     if (!LLM_KEY_NAMES.includes(name as LlmKeyName)) return settingsState();
@@ -439,12 +459,23 @@ function registerIpc(): void {
     const portChanged = config.port !== prevPort; // only flag an actually-applied change
     const hiddenChanged = typeof prefs.startHidden === "boolean" && prefs.startHidden !== config.startHidden;
     if (typeof prefs.startHidden === "boolean") config.startHidden = prefs.startHidden;
+    const prevMonitor = config.leaderboard.monitor;
     if (prefs.leaderboard) {
       const next = { ...config.leaderboard, ...prefs.leaderboard };
       if (next.mode !== "bar" && next.mode !== "window") next.mode = config.leaderboard.mode;
       config.leaderboard = next;
     }
     saveConfig(config);
+    // The monitor is a map-time window rule, so the window has to be recreated
+    // for a change to take effect.
+    if (isLinux && config.leaderboard.monitor !== prevMonitor) {
+      void applyHyprlandRules(leaderboardWindowWanted()).then(() => {
+        if (!leaderboardWindow) return;
+        leaderboardWindow.close();
+        leaderboardWindow = null;
+        applyLeaderboardMode();
+      });
+    }
     applyLeaderboardMode();
     if (leaderboardWindow) applyLeaderboardBounds(leaderboardWindow.getBounds().height);
     if (!isLinux) leaderboardWindow?.setAlwaysOnTop(config.leaderboard.pinOnTop, "floating");
@@ -614,8 +645,10 @@ if (!gotLock) {
     updater.init();
 
     createTray();
-    // A crashed previous instance may have left its dock reservation behind.
-    if (isLinux) void hyprlandRelease();
+    refreshMonitors();
+    // Refresh the generated rules: a crashed instance may have left dock gaps
+    // behind, and the monitor rule has to exist before the window maps.
+    if (isLinux) void applyHyprlandRules(leaderboardWindowWanted());
     supervisor.start();
 
     // Apply auto-launch registration to match saved config on every start

@@ -45,7 +45,7 @@ AI curation is **cloud-only** (no local models). An LLM router rotates across fr
 2. Cerebras Llama 3.3 70B
 3. Groq Llama 3.1 8B
 4. OpenRouter Llama 3.3 70B (`:free`)
-5. Gemini 2.5 Flash
+5. Gemini 3.5 Flash Lite
 6. OpenRouter DeepSeek V3 (`:free`)
 
 Each candidate has independent backoff:
@@ -61,7 +61,7 @@ Curation **never silently degrades**. Every run records which provider served it
 The Settings window is organized into these sections:
 
 - **Connections** — all API keys.
-- **Desktop leaderboard** — on Linux a **Mode** switch: *Bar panel* (default on Omarchy; the leaderboard opens from the bar widget and nothing moves) or *Floating window* (show/hide, dock side, rows, and an opt-in "keep tiled windows beside the widget" that adds per-workspace gaps via `~/.config/hypr/ai-pulse-dock.lua`). **Always-on-top is Windows-only**: on Hyprland the compositor owns stacking, so the shipped Hyprland rule floats, pins, and docks the window instead (see [INSTALL.md](./INSTALL.md#6-omarchy-integration-optional)).
+- **Desktop leaderboard** — on Linux a **Mode** switch: *Bar panel* (default on Omarchy; the leaderboard opens from the bar widget and nothing moves) or *Floating window* (show/hide, dock side, **monitor**, rows, and an opt-in "keep tiled windows beside the widget"). The monitor choice and the gaps are written as Hyprland rules into `~/.config/hypr/ai-pulse-dock.lua`; because a monitor is decided when the window maps, changing it reopens the leaderboard. **Always-on-top is Windows-only**: on Hyprland the compositor owns stacking, so the shipped Hyprland rule floats, pins, and docks the window instead (see [INSTALL.md](./INSTALL.md#6-omarchy-integration-optional)).
 - **Startup & service** — Start on login (Windows: an `HKCU` Run entry; Linux: `~/.config/autostart/ai-pulse.desktop`), Start hidden in tray, Server port, and Restart / Stop / Start.
 - **Preferences** — primary model, provider, priority weights (coding / reasoning / speed / cost), budget tier, and notes (the upgrade advisor formerly known as the web "My Stack").
 - **Notifications** — breaking news, new models & leader changes, upgrade suggestions.

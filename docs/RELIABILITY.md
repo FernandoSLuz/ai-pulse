@@ -18,7 +18,7 @@ The router always tries candidates in this fixed order:
 | 2 | Cerebras | Llama 3.3 70B |
 | 3 | Groq | Llama 3.1 8B |
 | 4 | OpenRouter | Llama 3.3 70B (`:free`) |
-| 5 | Gemini | 2.5 Flash |
+| 5 | Gemini | 3.5 Flash Lite |
 | 6 | OpenRouter | DeepSeek V3 (`:free`) |
 
 ### Per-candidate backoff

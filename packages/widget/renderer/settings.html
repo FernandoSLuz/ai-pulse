@@ -51,12 +51,16 @@
       <div class="row" id="lb-reserve-row">
         <label class="switch"><input type="checkbox" id="lb-reserve" /><span>Keep tiled windows beside the widget (adds workspace gaps)</span></label>
       </div>
-      <div class="row">
+      <div class="row" id="lb-dock-row">
         <span class="row-label">Dock side</span>
         <div class="seg" id="lb-dock">
           <button data-side="left">Left</button>
           <button data-side="right">Right</button>
         </div>
+      </div>
+      <div class="row" id="lb-monitor-row">
+        <span class="row-label">Monitor</span>
+        <select id="lb-monitor" class="num" style="width:auto;min-width:170px"></select>
       </div>
       <div class="row">
         <label class="switch"><input type="checkbox" id="lb-pin" /><span>Always on top of other windows</span></label>

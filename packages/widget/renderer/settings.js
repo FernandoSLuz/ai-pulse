@@ -124,7 +124,22 @@ function renderLeaderboard() {
   el("lb-blurb").textContent = barPanel && !windowMode
     ? "Click the AI Pulse entry in your bar to open the leaderboard as a panel. Nothing else on screen moves."
     : "The ranking widget docked to your screen edge.";
-  ["lb-show-row", "lb-reserve-row"].forEach((id) => el(id).classList.toggle("hidden", !windowMode));
+  ["lb-show-row", "lb-reserve-row", "lb-dock-row", "lb-monitor-row"].forEach((id) =>
+    el(id).classList.toggle("hidden", !windowMode),
+  );
+  const monitors = Array.isArray(state.monitors) ? state.monitors : [];
+  el("lb-monitor-row").classList.toggle("hidden", !windowMode || monitors.length === 0);
+  const select = el("lb-monitor");
+  const wanted = lb.monitor || "";
+  const options = ["", ...monitors];
+  if (wanted && !monitors.includes(wanted)) options.push(wanted); // keep a disconnected choice visible
+  if (select.dataset.options !== options.join("|")) {
+    select.dataset.options = options.join("|");
+    select.innerHTML = options
+      .map((m) => `<option value="${m}">${m === "" ? "Follow the focused monitor" : m}</option>`)
+      .join("");
+  }
+  select.value = wanted;
   el("lb-reserve-row").classList.toggle("hidden", !windowMode || state.platform !== "linux");
   el("lb-reserve").checked = Boolean(lb.reserveSpace);
   el("lb-show").checked = lb.show;
@@ -408,6 +423,10 @@ function wireControls() {
       state = await api.setPrefs({ leaderboard: { ...state.config.leaderboard, mode } });
       applyState();
     });
+  });
+  el("lb-monitor").addEventListener("change", async (e) => {
+    state = await api.setPrefs({ leaderboard: { ...state.config.leaderboard, monitor: e.target.value } });
+    applyState();
   });
   el("lb-reserve").addEventListener("change", async (e) => {
     state = await api.setPrefs({ leaderboard: { ...state.config.leaderboard, reserveSpace: e.target.checked } });

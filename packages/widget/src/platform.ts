@@ -23,6 +23,8 @@ export const isWindows = process.platform === "win32";
 export const isHyprland =
   isLinux && (Boolean(process.env.HYPRLAND_INSTANCE_SIGNATURE) || /hyprland/i.test(process.env.XDG_CURRENT_DESKTOP ?? ""));
 export const DESKTOP_ID = "ai-pulse";
+/** Window title of the leaderboard — a contract with packages/web/widget.html and the Hyprland rules. */
+export const LEADERBOARD_TITLE = "AI Pulse Widget";
 export const DESKTOP_FILE = `${DESKTOP_ID}.desktop`;
 export const PROTOCOL = "aipulse";
 
@@ -187,6 +189,17 @@ interface HyprMonitor {
   reserved?: number[]; // [left, top, right, bottom] — the bar's exclusive zone
 }
 
+interface HyprMonitorFull extends HyprMonitor {
+  name: string;
+}
+
+/** Connected monitor names, for the Settings dropdown. Empty off Hyprland. */
+export async function hyprlandMonitorNames(): Promise<string[]> {
+  if (!isHyprland) return [];
+  const monitors = await hyprctlJson<HyprMonitorFull[]>(["monitors"]);
+  return (monitors ?? []).map((m) => m.name).filter(Boolean);
+}
+
 function hyprctlJson<T>(args: string[]): Promise<T | null> {
   return new Promise((resolve) => {
     execFile("hyprctl", ["-j", ...args], { timeout: 3000 }, (err, out) => {
@@ -207,13 +220,24 @@ function hyprctlJson<T>(args: string[]): Promise<T | null> {
  * the leaderboard resizes to its content — so re-dock after every resize.
  * No-op outside Hyprland; failures are silent (the rule still applies).
  */
-export async function hyprlandDock(title: string, width: number, side: "left" | "right", gap: number): Promise<void> {
+export async function hyprlandDock(
+  title: string,
+  width: number,
+  side: "left" | "right",
+  gap: number,
+  preferredMonitor = "",
+): Promise<void> {
   if (!isHyprland) return;
   const clients = await hyprctlJson<HyprClient[]>(["clients"]);
   const win = clients?.find((c) => c.class === DESKTOP_ID && c.title === title);
   if (!win) return;
-  const monitors = await hyprctlJson<HyprMonitor[]>(["monitors"]);
-  const mon = monitors?.find((m) => m.id === win.monitor) ?? monitors?.[0];
+  const monitors = await hyprctlJson<HyprMonitorFull[]>(["monitors"]);
+  // A preferred monitor wins: moving a floating window to coordinates on
+  // another output is what relocates it (Hyprland has no per-window monitor rule).
+  const mon =
+    (preferredMonitor ? monitors?.find((m) => m.name === preferredMonitor) : undefined) ??
+    monitors?.find((m) => m.id === win.monitor) ??
+    monitors?.[0];
   if (!mon) return;
   const logicalWidth = Math.round(mon.width / (mon.scale || 1));
   const x = side === "right" ? mon.x + logicalWidth - width : mon.x;
@@ -228,10 +252,6 @@ export async function hyprlandDock(title: string, width: number, side: "left" | 
     new Promise<string>((resolve) => execFile("hyprctl", ["dispatch", ...args], { timeout: 3000 }, (_err, out) => resolve(String(out ?? ""))));
   const result = await dispatch([luaCall]);
   if (!/^ok/m.test(result)) await dispatch(legacy);
-}
-
-interface HyprMonitorFull extends HyprMonitor {
-  name: string;
 }
 
 function hyprctlText(args: string[]): Promise<string> {
@@ -275,34 +295,65 @@ async function writeDockFile(content: string): Promise<void> {
   await hyprctlText(["reload", "config-only"]);
 }
 
-/**
- * Turn the docked leaderboard into a real side dock without touching the bar:
- * a monitor-level `reserved` area would also shrink Omarchy's layer-shell bar,
- * so instead every workspace bound to the widget's monitor gets extra
- * `gaps_out` on the dock side. The rules live in a generated Lua file that
- * ai-pulse.lua requires, so they survive Hyprland reloads (theme changes).
- * No-op outside Hyprland; failures are silent.
- */
-export async function hyprlandReserve(title: string, width: number, side: "left" | "right", gap: number): Promise<void> {
-  if (!isHyprland) return;
-  const clients = await hyprctlJson<HyprClient[]>(["clients"]);
-  const win = clients?.find((c) => c.class === DESKTOP_ID && c.title === title);
-  const monitors = await hyprctlJson<HyprMonitorFull[]>(["monitors"]);
-  const mon = win && monitors?.find((m) => m.id === win.monitor);
-  if (!mon) return;
-  const [top, right, bottom, left] = await defaultGaps();
-  const r = side === "right" ? right + width + gap : right;
-  const l = side === "left" ? left + width + gap : left;
-  // One monitor selector covers every workspace on it, including ones created
-  // later (verified on Hyprland 0.56: `workspace = "m[DP-3]"` applies on reload).
-  const rule = `hl.workspace_rule({ workspace = "m[${mon.name}]", gaps_out = { top = ${top}, right = ${r}, bottom = ${bottom}, left = ${l} } })`;
-  await writeDockFile(`${DOCK_FILE_HEADER}-- Leaderboard docked ${side} on ${mon.name}: tiled windows keep clear of its ${width}px strip.\n${rule}\n`);
+export interface DockRules {
+  /** Leaderboard window is on screen (only then can it claim space). */
+  active: boolean;
+  /** Monitor to keep the leaderboard on; empty = follow the focused one. */
+  monitor: string;
+  side: "left" | "right";
+  width: number;
+  gap: number;
+  /** Keep tiled windows clear of the leaderboard (workspace gaps). */
+  reserveSpace: boolean;
 }
 
-/** Drop the dock gaps (leaderboard hidden or app quitting / starting after a crash). */
-export async function hyprlandRelease(): Promise<void> {
+/**
+ * Write the generated Hyprland rules for the leaderboard: which monitor it
+ * opens on, and — when asked — extra `gaps_out` so tiled windows keep clear of
+ * it. A monitor-level `reserved` area would shrink Omarchy's layer-shell bar,
+ * hence per-workspace gaps. The rules live in a file that ai-pulse.lua requires,
+ * so they survive Hyprland reloads (theme changes) and, unlike `hyprctl eval`
+ * state, a `reload config-only`. No-op outside Hyprland; failures are silent.
+ */
+export async function hyprlandRules(rules: DockRules): Promise<void> {
   if (!isHyprland) return;
-  await writeDockFile(`${DOCK_FILE_HEADER}-- No leaderboard docked.\n`);
+  const lines: string[] = [];
+
+  if (rules.monitor) {
+    // Static rule, evaluated when the window maps: the only reliable way to put
+    // a window on another output (moving it by pixels paints it there but
+    // leaves it owned by the original monitor's workspace).
+    lines.push(`-- Leaderboard opens on ${rules.monitor}.`);
+    lines.push(
+      `o.window({ class = "^${DESKTOP_ID}$", title = "^${LEADERBOARD_TITLE}$" }, { monitor = ${JSON.stringify(rules.monitor)} })`,
+    );
+  }
+
+  if (rules.active && rules.reserveSpace) {
+    const monitor = rules.monitor || (await currentLeaderboardMonitor());
+    if (monitor) {
+      const [top, right, bottom, left] = await defaultGaps();
+      const r = rules.side === "right" ? right + rules.width + rules.gap : right;
+      const l = rules.side === "left" ? left + rules.width + rules.gap : left;
+      lines.push(`-- Tiled windows on ${monitor} keep clear of the ${rules.width}px leaderboard strip.`);
+      // One monitor selector covers every workspace on it, including ones
+      // created later (verified on Hyprland 0.56: `workspace = "m[DP-3]"`).
+      lines.push(
+        `hl.workspace_rule({ workspace = "m[${monitor}]", gaps_out = { top = ${top}, right = ${r}, bottom = ${bottom}, left = ${l} } })`,
+      );
+    }
+  }
+
+  await writeDockFile(`${DOCK_FILE_HEADER}${lines.length ? lines.join("\n") : "-- No leaderboard rules."}\n`);
+}
+
+/** Name of the monitor the leaderboard window currently sits on, if any. */
+async function currentLeaderboardMonitor(): Promise<string> {
+  const clients = await hyprctlJson<HyprClient[]>(["clients"]);
+  const win = clients?.find((c) => c.class === DESKTOP_ID && c.title === LEADERBOARD_TITLE);
+  if (!win) return "";
+  const monitors = await hyprctlJson<HyprMonitorFull[]>(["monitors"]);
+  return monitors?.find((m) => m.id === win.monitor)?.name ?? "";
 }
 
 /** The Omarchy integration installer: shipped under resources/linux when packaged. */

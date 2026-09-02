@@ -251,12 +251,18 @@ const CANDIDATES: Candidate[] = [
       }),
   },
   {
-    id: "gemini:gemini-2.5-flash",
+    // Second bite at Gemini, reached only when the flash model above was rate
+    // limited and every other provider failed. A *lite* model is the right
+    // pick here: it has its own, larger free-tier allowance, and it answers a
+    // JSON-only prompt without spending the budget on thinking tokens.
+    // (gemini-2.5-flash used to sit here; Google retired it for new users on
+    // 2026-09 — it 404s with "no longer available to new users".)
+    id: "gemini:gemini-3.5-flash-lite",
     provider: "gemini",
-    model: "gemini-2.5-flash",
-    label: "Gemini 2.5 Flash",
+    model: "gemini-3.5-flash-lite",
+    label: "Gemini 3.5 Flash Lite",
     keyOf: (e) => e.geminiKey,
-    call: (prompt, key) => callGeminiJson("gemini-2.5-flash", prompt, key),
+    call: (prompt, key) => callGeminiJson("gemini-3.5-flash-lite", prompt, key),
   },
   {
     id: "openrouter:deepseek-chat:free",
