@@ -11,6 +11,7 @@ import { configPath, dataDir, serverBundleDir, legacyConfigPaths } from "./paths
  */
 
 export type LlmKeyName =
+  | "DEEPSEEK_API_KEY"
   | "GEMINI_API_KEY"
   | "CEREBRAS_API_KEY"
   | "GROQ_API_KEY"
@@ -19,6 +20,7 @@ export type LlmKeyName =
   | "TAVILY_API_KEY";
 
 export const LLM_KEY_NAMES: LlmKeyName[] = [
+  "DEEPSEEK_API_KEY",
   "GEMINI_API_KEY",
   "CEREBRAS_API_KEY",
   "GROQ_API_KEY",

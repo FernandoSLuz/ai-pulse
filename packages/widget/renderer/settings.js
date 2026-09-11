@@ -3,11 +3,12 @@ const api = window.aiPulse;
 
 // curator: true => powers AI curation (the rotation). You need at least one.
 const KEY_META = {
-  GEMINI_API_KEY: { label: "Gemini", role: "AI curator · 3.5 & 2.5 Flash", hint: "Best free quality", url: "https://aistudio.google.com/apikey", curator: true },
+  DEEPSEEK_API_KEY: { label: "DeepSeek", role: "AI curator · V4 Pro (preferred)", hint: "Owner's primary curator — used first", url: "https://platform.deepseek.com/api_keys", curator: true },
+  GEMINI_API_KEY: { label: "Gemini", role: "AI curator · 3.5 & 2.5 Flash", hint: "Fallback free tier", url: "https://aistudio.google.com/apikey", curator: true },
   CEREBRAS_API_KEY: { label: "Cerebras", role: "AI curator · Llama 3.3 70B", hint: "Fast, generous free tier", url: "https://cloud.cerebras.ai", curator: true },
   GROQ_API_KEY: { label: "Groq", role: "AI curator · Llama 3.1 8B", hint: "Fast; small daily budget", url: "https://console.groq.com/keys", curator: true },
   OPENROUTER_API_KEY: { label: "OpenRouter", role: "AI curator · free pool", hint: "Llama 3.3 70B / DeepSeek V3 (free)", url: "https://openrouter.ai/keys", curator: true },
-  AA_API_KEY: { label: "Artificial Analysis", role: "Benchmarks", hint: "Live model rankings", url: "https://artificialanalysis.ai/insights", curator: false },
+  AA_API_KEY: { label: "Artificial Analysis", role: "Benchmarks (optional)", hint: "Public leaderboard needs no key", url: "https://artificialanalysis.ai/insights", curator: false },
   TAVILY_API_KEY: { label: "Tavily", role: "Chat web search", hint: "1,000 free credits/month", url: "https://app.tavily.com", curator: false },
 };
 

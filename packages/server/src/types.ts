@@ -154,7 +154,7 @@ export interface AnalystBriefing {
   yourStack: string;
   upgradeSuggestion: string | null;
   upgradeSlug: string | null;
-  analystSource: "gemini" | "groq" | "cerebras" | "openrouter" | "ollama" | "rules";
+  analystSource: "deepseek" | "gemini" | "groq" | "cerebras" | "openrouter" | "ollama" | "rules";
   createdAt: string;
 }
 

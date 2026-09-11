@@ -23,30 +23,33 @@ Add these in **Settings → Connections**. You need at least **one** AI provider
 
 | Provider | Powers | Get a key | Required? |
 | --- | --- | --- | --- |
-| Gemini | AI curation (router) + chat web-search grounding fallback | https://aistudio.google.com/apikey | At least one AI key required* |
+| DeepSeek | AI curation (router, tried first: V4 Pro → V4.1 Flash) | https://platform.deepseek.com/api_keys | At least one AI key required* |
+| Gemini | AI curation (router) + chat web-search grounding fallback | https://aistudio.google.com/apikey | Optional* |
 | Cerebras | AI curation (router) | https://cloud.cerebras.ai | Optional* |
 | Groq | AI curation (router) | https://console.groq.com/keys | Optional* |
 | OpenRouter | AI curation (router) | https://openrouter.ai/keys | Optional* |
-| Artificial Analysis (`AA_API_KEY`) | Benchmark rankings | https://artificialanalysis.ai/insights | Optional |
+| Artificial Analysis (`AA_API_KEY`) | Benchmark enrichment (rankings work without it) | https://artificialanalysis.ai/insights | Optional |
 | Tavily | Chat web-search agent (preferred) | https://app.tavily.com | Optional |
 
-\* Gemini, Cerebras, Groq, and OpenRouter are the AI curation providers. **You must supply at least one of them.** Each is individually optional, but adding more makes curation more resilient.
+\* DeepSeek, Gemini, Cerebras, Groq, and OpenRouter are the AI curation providers. **You must supply at least one of them.** Each is individually optional, but adding more makes curation more resilient.
 
 Notes on the optional keys:
 
-- **Artificial Analysis** uses the free-tier `/free` endpoint. Other endpoints are plan-gated and skipped quietly.
+- **Artificial Analysis** is *not* required for rankings: AI Pulse reads the public leaderboard directly. The keyed `/free` endpoint only enriches rows (composite coding/math indexes) and is skipped quietly when the key is missing or rejected.
 - **Chat web search** prefers **Tavily**. Without it, the agent falls back to **Gemini grounding**.
 
 ## AI provider rotation
 
-AI curation is **cloud-only** (no local models). An LLM router rotates across free cloud providers in a fixed order and uses the **first one that answers with valid JSON**:
+AI curation is **cloud-only** (no local models). An LLM router tries providers in a fixed order and uses the **first one that answers with valid JSON**:
 
-1. Gemini 3.5 Flash
-2. Cerebras Llama 3.3 70B
-3. Groq Llama 3.1 8B
-4. OpenRouter Llama 3.3 70B (`:free`)
-5. Gemini 3.5 Flash Lite
-6. OpenRouter DeepSeek V3 (`:free`)
+1. DeepSeek V4 Pro
+2. DeepSeek V4.1 Flash
+3. Gemini 3.5 Flash
+4. Cerebras Llama 3.3 70B
+5. Groq Llama 3.1 8B
+6. OpenRouter Llama 3.3 70B (`:free`)
+7. Gemini 3.5 Flash Lite
+8. OpenRouter DeepSeek V3 (`:free`)
 
 Each candidate has independent backoff:
 
@@ -54,7 +57,7 @@ Each candidate has independent backoff:
 - **Unavailable** (bad model id, 400/401/403/404) → parked for ~12h.
 - **Transient errors** → cool down for ~2m.
 
-Curation **never silently degrades**. Every run records which provider served it — or that it fell back to deterministic **"rules"** — in the database. `GET /api/health` returns full provider status plus the last outcome, so the app can show `AI: Gemini ✓` or `AI: degraded (rules)`.
+Curation **never silently degrades**. Every run records which provider served it — or that it fell back to deterministic **"rules"** — in the database. `GET /api/health` returns full provider status plus the last outcome, so the app can show `AI: DeepSeek V4 ✓` or `AI: degraded (rules)`.
 
 ## Settings window sections
 

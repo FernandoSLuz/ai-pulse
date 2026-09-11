@@ -115,16 +115,18 @@ Alongside the poll cycle, clients read content on demand via the **REST API**, a
 
 ### AI curation reliability
 
-Curation is **cloud‑only** (no local models). An **LLM router** rotates across free cloud providers, using the first that answers with valid JSON, in this order:
+Curation is **cloud‑only** (no local models). An **LLM router** tries providers in order, using the first that answers with valid JSON, in this order:
 
 | # | Provider / model |
 | --- | --- |
-| 1 | Gemini 3.5 Flash |
-| 2 | Cerebras Llama 3.3 70B |
-| 3 | Groq Llama 3.1 8B |
-| 4 | OpenRouter Llama 3.3 70B (`:free`) |
-| 5 | Gemini 3.5 Flash Lite |
-| 6 | OpenRouter DeepSeek V3 (`:free`) |
+| 1 | DeepSeek V4 Pro |
+| 2 | DeepSeek V4.1 Flash |
+| 3 | Gemini 3.5 Flash |
+| 4 | Cerebras Llama 3.3 70B |
+| 5 | Groq Llama 3.1 8B |
+| 6 | OpenRouter Llama 3.3 70B (`:free`) |
+| 7 | Gemini 3.5 Flash Lite |
+| 8 | OpenRouter DeepSeek V3 (`:free`) |
 
 Each candidate has **independent backoff**:
 
@@ -132,7 +134,17 @@ Each candidate has **independent backoff**:
 - **Unavailable** (bad model id / `400`/`401`/`403`/`404`): parks for **~12h**.
 - **Transient** errors: cool down for **~2m**.
 
-Curation **never silently degrades**. Every run records which provider served it — or that it fell back to deterministic **"rules"** — in the DB. `GET /api/health` returns full provider status plus the last outcome, so the app can show `AI: Gemini ✓` or `AI: degraded (rules)`. You need **at least one** provider key; adding more makes curation more resilient.
+Curation **never silently degrades**. Every run records which provider served it — or that it fell back to deterministic **"rules"** — in the DB. `GET /api/health` returns full provider status plus the last outcome, so the app can show `AI: DeepSeek V4 ✓` or `AI: degraded (rules)`. You need **at least one** provider key; adding more makes curation more resilient.
+
+### Benchmark ingestion
+
+Model rankings come from the **public Artificial Analysis leaderboard** (RSC payload, no key
+required): `fetchAaPublicSiteModels` joins the payload's metadata rows (name/creator) with its
+metric rows (intelligence/pricing/speed) by slug and drops models AA marks as deprecated. The
+keyed `AA_API_KEY` API is optional enrichment — it is skipped when the key is absent, and a
+rejected/expired key never fabricates rows. When a full feed (≥100 models) is fetched, rows for
+models absent from it are pruned, so the DB mirrors the live leaderboard instead of accumulating
+stale entries.
 
 ## Key modules per package
 

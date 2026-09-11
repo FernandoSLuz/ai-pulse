@@ -14,12 +14,14 @@ The router always tries candidates in this fixed order:
 
 | # | Provider | Model |
 |---|----------|-------|
-| 1 | Gemini | 3.5 Flash |
-| 2 | Cerebras | Llama 3.3 70B |
-| 3 | Groq | Llama 3.1 8B |
-| 4 | OpenRouter | Llama 3.3 70B (`:free`) |
-| 5 | Gemini | 3.5 Flash Lite |
-| 6 | OpenRouter | DeepSeek V3 (`:free`) |
+| 1 | DeepSeek | V4 Pro |
+| 2 | DeepSeek | V4.1 Flash |
+| 3 | Gemini | 3.5 Flash |
+| 4 | Cerebras | Llama 3.3 70B |
+| 5 | Groq | Llama 3.1 8B |
+| 6 | OpenRouter | Llama 3.3 70B (`:free`) |
+| 7 | Gemini | 3.5 Flash Lite |
+| 8 | OpenRouter | DeepSeek V3 (`:free`) |
 
 ### Per-candidate backoff
 
@@ -45,7 +47,7 @@ GET /api/health
 
 The response includes full **analyst provider status** plus the **last outcome** (`lastOutcome`), which is what the app surfaces in the UI:
 
-- `AI: Gemini ✓` — a cloud provider served the last run
+- `AI: DeepSeek V4 ✓` — a cloud provider served the last run
 - `AI: degraded (rules)` — every provider was unavailable and deterministic rules were used
 
 Because the outcome is persisted and reported, a degraded state is always visible rather than hidden.
@@ -58,12 +60,21 @@ Where to get keys:
 
 | Provider | Get a key |
 |----------|-----------|
+| DeepSeek (preferred) | https://platform.deepseek.com/api_keys |
 | Gemini | https://aistudio.google.com/apikey |
 | Cerebras | https://cloud.cerebras.ai |
 | Groq | https://console.groq.com/keys |
 | OpenRouter | https://openrouter.ai/keys |
 
 All keys are edited in the desktop app under **Settings → Connections**.
+
+### Benchmark data
+
+Rankings do **not** depend on any key: the server reads the public Artificial Analysis
+leaderboard and mirrors the models it reports (metadata + metrics joined by slug). An
+`AA_API_KEY` is optional enrichment, and a rejected key is simply skipped — it never causes
+fabricated rows. When a full feed is fetched, models missing from it are pruned, so retired
+entries stop ranking against current ones.
 
 ---
 

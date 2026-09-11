@@ -9,8 +9,9 @@ Fonte única: `README.md` + `docs/ARCHITECTURE.md` + `docs/CONFIGURATION.md` +
 `docs/RELEASING.md`. Leia antes de agir.
 
 ## Comandos
-- `npm ci && npx install-electron` — obrigatório antes de tudo (node_modules pode não existir;
-  Electron >= 42 não baixa o binário no install). Node >= 22.14 (`engines`).
+- Node >= 22.14 (`engines`). Quando faltarem dependências ou o lockfile mudar, rode `npm ci`.
+  Para executar ou empacotar o widget, rode também `npx install-electron` se faltar o binário
+  (Electron >= 42 não o baixa no install). Leitura e edição de documentação dispensam instalação.
 - `npm run build` — tsc do server + tsc do widget + build-resources (o web é copiado, não buildado).
 - `npm run dev` — server em watch na porta 3847 (`tsx watch src/index.ts`).
 - `npm run gate` — build + `node --check packages/web/app.js` +
@@ -28,6 +29,14 @@ Fonte única: `README.md` + `docs/ARCHITECTURE.md` + `docs/CONFIGURATION.md` +
   2=imprensa/Google News, 3=comunidade.
 - `merge-models.ts` funde POR SLUG de propósito; variantes ficam separadas no banco.
   Colapso de variantes é só apresentação (`collapse-variants.ts` em `buildRankingsSnapshot`).
+- Benchmarks: fonte primária é o leaderboard público da Artificial Analysis (payload RSC, sem
+  chave), que serializa metadados e métricas em objetos separados — juntar por slug. `AA_API_KEY`
+  é enriquecimento opcional (índices compostos de coding/math) e NUNCA pode gerar linhas
+  sintéticas/demo. Com feed completo (≥100 modelos) o poll poda linhas ausentes: o banco espelha
+  o feed em vez de acumular modelos aposentados.
+- Curadoria de IA: `deepseek-v4-pro` é o primeiro candidato do router (`deepseek-flash` depois);
+  Gemini/Cerebras/Groq/OpenRouter são spillover. Chave `DEEPSEEK_API_KEY` (`.env` em dev,
+  `config.json` no app); os modelos de raciocínio pedem timeout maior que o padrão de 45s.
 - `GET /api/videos` sem `kind` = `kind=creator` — contrato do `widget.html` (`?limit=3`).
   Payload WS `{type:"videos"}`: `items` = creators, `companyItems` = empresas. Não renomear campos.
 - Toda URL de feed nova: verificar por GET (200 + parseia RSS/Atom + item ≤90 dias) antes de
@@ -54,28 +63,8 @@ Fonte única: `README.md` + `docs/ARCHITECTURE.md` + `docs/CONFIGURATION.md` +
   Bump nos TRÊS `package.json` (raiz, server, widget).
   **Push de tag é gate humano — só com "pode subir" do Fernando.**
 
-## Orquestração
-Orquestração: skill **/orquestrar** (`/work/_referencia/orquestracao/skills/orquestrar/SKILL.md`) — hierarquia por host, guarda-corpos, gauntlet com tetos, gate Unity. Lições medidas: `/work/_referencia/orquestracao/LICOES.md`. Regra dos lugares: `/work/_referencia/REGRA-DOS-LUGARES.md`. Loop de qualidade só pela skill.
+## Memory protocol
 
-```yaml
-# gauntlet-gates v1
-pipeline: generico
-gate_duro:
-  comando: npm run gate && curl -sf http://127.0.0.1:3847/api/health
-  # npm run gate = npm run build && node --check packages/web/app.js && node --check packages/widget/renderer/settings.js
-  # [a verificar] verify-sources/gate-check citados em 2026-09-01 não são scripts do package.json;
-  #   existem só como packages/server/scripts/{verify-sources,gate-check}.ts (tsx). gate-check exige
-  #   o server na 3847 (unicidade do leaderboard, My Stack resolve, contrato /api/videos);
-  #   verify-sources bate na rede (HN/Reddit já falharam por fetch/429) — fora do gate até decisão.
-  verde_quando: exit 0 e health 200 (servidor em npm run dev, porta 3847)
-barra_cega:
-  referencia: painel Creators/News Feed do AI Pulse (escolha do Fernando, 2026-09-01) — prints no mesmo viewport
-  critico: visao
-tetos:
-  rodadas: 5
-gate_humano: false   # push de tag é gate humano fora do loop
-```
-
-## Exceções medidas de modelo
-(nenhuma ainda — registrar aqui: data · tarefa · modelo barato que falhou · evidência ·
-modelo adotado no lugar)
+1. Registre apenas convenções duráveis do projeto e decisões confirmadas, úteis a tarefas futuras.
+2. Atualize o documento que já é dono do assunto; substitua o trecho superado. Use este arquivo para instruções de agente e ponteiros, não para receitas, resultados de sessão ou histórico de tentativas.
+3. Não transforme uma observação isolada em regra permanente nem duplique conteúdo em memórias privadas. Segredos ficam fora da documentação.

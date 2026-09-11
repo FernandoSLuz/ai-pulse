@@ -235,6 +235,29 @@ export function getAllModels(): ModelRecord[] {
   return rows.map(rowToModel);
 }
 
+/**
+ * Delete the given slugs, returning the ones that actually existed. Used to
+ * clear rows a source stopped reporting (legacy demo data, retired models).
+ */
+export function deleteModelsBySlugs(slugs: string[]): string[] {
+  if (slugs.length === 0) return [];
+  const database = getDb();
+  const stmt = database.prepare("DELETE FROM models WHERE slug = ?");
+  const removed: string[] = [];
+  const tx = database.transaction((items: string[]) => {
+    for (const slug of items) {
+      if (stmt.run(slug).changes > 0) removed.push(slug);
+    }
+  });
+  tx(slugs);
+  return removed;
+}
+
+/** Every slug currently persisted (used to compute what a full feed obsolete). */
+export function listModelSlugs(): string[] {
+  return (getDb().prepare("SELECT slug FROM models").all() as { slug: string }[]).map((r) => r.slug);
+}
+
 export function getModelBySlug(slug: string): ModelRecord | null {
   const row = getDb().prepare("SELECT * FROM models WHERE slug = ?").get(slug) as Record<string, unknown> | undefined;
   return row ? rowToModel(row) : null;

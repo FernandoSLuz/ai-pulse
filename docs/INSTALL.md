@@ -69,11 +69,12 @@ Your data and settings live in `~/.config/AI Pulse/` (`config.json`, `data/ai-pu
 
 On first launch, AI Pulse opens the **Settings** window. Under the **Connections** section, add **at least one** AI provider key so curation works.
 
-We recommend starting with **Gemini** (generous free tier). Adding more providers makes AI curation more resilient.
+We recommend starting with **DeepSeek** (V4 Pro is tried first). Adding more providers makes AI curation more resilient. Benchmark rankings need no key at all.
 
 | Provider | Where to get a key |
 | --- | --- |
-| Gemini (recommended) | https://aistudio.google.com/apikey |
+| DeepSeek (recommended) | https://platform.deepseek.com/api_keys |
+| Gemini | https://aistudio.google.com/apikey |
 | Cerebras | https://cloud.cerebras.ai |
 | Groq | https://console.groq.com/keys |
 | OpenRouter | https://openrouter.ai/keys |

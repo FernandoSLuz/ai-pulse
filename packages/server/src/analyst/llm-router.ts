@@ -13,9 +13,10 @@ import { GoogleGenAI } from "@google/genai";
  * back to deterministic rules — but we record that so the UI can show it.
  */
 
-export type AnalystProvider = "gemini" | "groq" | "cerebras" | "openrouter";
+export type AnalystProvider = "deepseek" | "gemini" | "groq" | "cerebras" | "openrouter";
 
 export interface AnalystEnv {
+  deepseekKey?: string;
   geminiKey?: string;
   groqKey?: string;
   cerebrasKey?: string;
@@ -168,9 +169,12 @@ async function callOpenAICompatibleJson(opts: {
   prompt: string;
   apiKey: string;
   jsonMode: boolean;
+  /** Reasoning models can chew on a 10k-token prompt far past the default budget. */
+  timeoutMs?: number;
   headers?: Record<string, string>;
   label: string;
 }): Promise<Record<string, unknown> | null> {
+  const timeoutMs = opts.timeoutMs ?? LLM_TIMEOUT_MS;
   const res = await fetch(`${opts.baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
@@ -184,7 +188,7 @@ async function callOpenAICompatibleJson(opts: {
       temperature: 0.3,
       ...(opts.jsonMode ? { response_format: { type: "json_object" } } : {}),
     }),
-    signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
@@ -196,11 +200,51 @@ async function callOpenAICompatibleJson(opts: {
 }
 
 // ---- Candidate list (priority order) ---------------------------------------
-// Ordering balances quality, free-tier generosity, and token economy: Gemini
-// Flash first (best free quality), then Cerebras (very generous + fast), then a
-// light Groq model, then OpenRouter free pools, then extra Gemini capacity.
+// DeepSeek V4 leads: it is the curator the owner asked for, and one paid key
+// with a large context is steadier than a stack of free tiers. Everything
+// below stays as spillover for installs without a DeepSeek key (or when it is
+// rate-limited): Gemini Flash, Cerebras, a light Groq model, then OpenRouter.
+
+const DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1";
+// V4 Pro is a reasoning model and the curation prompt is ~10k tokens: a cold
+// call can exceed the 45s default before it emits any JSON.
+const DEEPSEEK_TIMEOUT_MS = 120_000;
 
 const CANDIDATES: Candidate[] = [
+  {
+    id: "deepseek:deepseek-v4-pro",
+    provider: "deepseek",
+    model: "deepseek-v4-pro",
+    label: "DeepSeek V4 Pro",
+    keyOf: (e) => e.deepseekKey,
+    call: (prompt, key) =>
+      callOpenAICompatibleJson({
+        baseUrl: DEEPSEEK_BASE_URL,
+        model: "deepseek-v4-pro",
+        prompt,
+        apiKey: key,
+        jsonMode: true,
+        timeoutMs: DEEPSEEK_TIMEOUT_MS,
+        label: "DeepSeek",
+      }),
+  },
+  {
+    id: "deepseek:deepseek-flash",
+    provider: "deepseek",
+    model: "deepseek-flash",
+    label: "DeepSeek V4.1 Flash",
+    keyOf: (e) => e.deepseekKey,
+    call: (prompt, key) =>
+      callOpenAICompatibleJson({
+        baseUrl: DEEPSEEK_BASE_URL,
+        model: "deepseek-flash",
+        prompt,
+        apiKey: key,
+        jsonMode: true,
+        timeoutMs: DEEPSEEK_TIMEOUT_MS,
+        label: "DeepSeek",
+      }),
+  },
   {
     id: "gemini:gemini-3.5-flash",
     provider: "gemini",

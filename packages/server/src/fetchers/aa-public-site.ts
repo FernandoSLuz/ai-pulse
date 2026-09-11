@@ -9,27 +9,35 @@ const AA_PUBLIC_URLS = [
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
-interface AaSiteModel {
+/**
+ * One row of AA's public leaderboard payload. The current payload serializes a
+ * model as *two* objects that must be joined by slug:
+ *   - metadata: { slug, name, creator, releaseDate, deprecated }
+ *   - metrics:  { slug, shortName, intelligenceIndex, pricing, speed, ... }
+ * Older payloads shipped a single object carrying both halves; this type keeps
+ * every field either half may provide.
+ */
+interface AaSiteRow {
   slug?: string;
   name?: string;
   shortName?: string;
+  deprecated?: boolean;
+  isReasoning?: boolean;
+  isOpenWeights?: boolean;
+  modelCreatorName?: string;
+  creator?: { name?: string; slug?: string } | null;
+  releaseDate?: string;
   intelligenceIndex?: number | null;
-  codingIndex?: number | null;
-  mathIndex?: number | null;
   price1mInputTokens?: number | null;
   price1mOutputTokens?: number | null;
   /** Standard 3:1 blend — named 0To3To1 on the public site payload. */
   price1mBlended0To3To1?: number | null;
   price1mBlended3To1?: number | null;
-  price1mBlended7To2To1?: number | null;
-  medianOutputSpeed?: number | null;
   medianOutputTokensPerSecond?: number | null;
+  medianOutputSpeed?: number | null;
   medianCanonicalAnswerOutputSpeed?: number | null;
-  medianTimeToFirstChunk?: number | null;
   medianTimeToFirstTokenSeconds?: number | null;
-  isOpenWeights?: boolean;
-  openSourceCategorization?: string | null;
-  creator?: { name?: string; slug?: string } | null;
+  medianTimeToFirstChunk?: number | null;
 }
 
 function blendedPrice(input: number, output: number): number {
@@ -39,25 +47,6 @@ function blendedPrice(input: number, output: number): number {
 function num(value: unknown): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
-}
-
-function richness(m: AaSiteModel): number {
-  let score = 0;
-  if (num(m.intelligenceIndex) > 0) score += 10;
-  if (num(m.codingIndex) > 0) score += 5;
-  if (num(m.mathIndex) > 0) score += 5;
-  if (num(m.price1mInputTokens) > 0 || num(m.price1mOutputTokens) > 0) score += 4;
-  if (num(m.price1mBlended0To3To1) > 0 || num(m.price1mBlended3To1) > 0) score += 2;
-  if (
-    num(m.medianOutputTokensPerSecond) > 0 ||
-    num(m.medianOutputSpeed) > 0 ||
-    num(m.medianCanonicalAnswerOutputSpeed) > 0
-  ) {
-    score += 4;
-  }
-  if (m.creator?.name) score += 1;
-  if (typeof m.isOpenWeights === "boolean") score += 1;
-  return score;
 }
 
 function extractBalancedObject(text: string, openBraceIndex: number): string | null {
@@ -86,24 +75,23 @@ function extractBalancedObject(text: string, openBraceIndex: number): string | n
   return null;
 }
 
-function findObjectStartForSlug(text: string, slugIndex: number): number {
-  const windowStart = Math.max(0, slugIndex - 120);
-  const before = text.slice(windowStart, slugIndex);
-  const idMatch = before.lastIndexOf('{"id":"');
-  if (idMatch >= 0) return windowStart + idMatch;
-
-  for (let i = slugIndex; i >= 0; i--) {
-    if (text[i] === "{") return i;
-  }
-  return -1;
+function rowRichness(row: AaSiteRow): number {
+  let score = 0;
+  if (row.creator?.name) score += 4;
+  if (row.name) score += 2;
+  if (row.releaseDate) score += 1;
+  return score;
 }
 
 /**
- * AA embeds multiple objects per slug (thin highlight cards + full model rows).
- * Keep the richest object so speed/price/coding are not dropped.
+ * Walk every `"slug"` occurrence, parse its enclosing balanced object, and
+ * bucket it as a metric row (has intelligenceIndex) or a metadata row (has a
+ * display name). Metric rows win first-seen; metadata keeps the richest twin
+ * because `release.slug` also produces thin `{slug,name}` objects.
  */
-function parseSiteModels(payload: string): AaSiteModel[] {
-  const best = new Map<string, AaSiteModel>();
+function indexSiteRows(payload: string): { metrics: Map<string, AaSiteRow>; metadata: Map<string, AaSiteRow> } {
+  const metrics = new Map<string, AaSiteRow>();
+  const metadata = new Map<string, AaSiteRow>();
   const slugRe = /"slug":"([^"]+)"/g;
   let match: RegExpExecArray | null;
 
@@ -111,78 +99,88 @@ function parseSiteModels(payload: string): AaSiteModel[] {
     const slug = match[1];
     if (!slug) continue;
 
-    const start = findObjectStartForSlug(payload, match.index);
+    const start = payload.lastIndexOf("{", match.index);
     if (start < 0) continue;
     const json = extractBalancedObject(payload, start);
-    if (!json || !json.includes('"intelligenceIndex"')) continue;
+    if (!json) continue;
 
+    let row: AaSiteRow;
     try {
-      const obj = JSON.parse(json) as AaSiteModel;
-      if (!obj.slug || !obj.name) continue;
-      if (typeof obj.intelligenceIndex !== "number" || obj.intelligenceIndex <= 0) continue;
-
-      const prev = best.get(obj.slug);
-      if (!prev || richness(obj) > richness(prev)) {
-        best.set(obj.slug, obj);
-      }
+      row = JSON.parse(json) as AaSiteRow;
     } catch {
-      // Skip malformed RSC fragments.
+      continue; // malformed RSC fragment
+    }
+    if (!row.slug) continue;
+
+    if (num(row.intelligenceIndex) > 0) {
+      if (!metrics.has(row.slug)) metrics.set(row.slug, row);
+    } else if (row.name) {
+      const prev = metadata.get(row.slug);
+      if (!prev || rowRichness(row) > rowRichness(prev)) metadata.set(row.slug, row);
     }
   }
 
-  return [...best.values()];
+  return { metrics, metadata };
 }
 
-function accessibilityFor(m: AaSiteModel): { accessibility: string; accessibilityScore: number } {
-  const cat = (m.openSourceCategorization ?? "").toLowerCase().replace(/_/g, "-");
-  if (m.isOpenWeights === true || cat === "open-source" || cat === "open-weights" || cat === "open") {
-    return { accessibility: "Open weights", accessibilityScore: 4 };
-  }
-  if (cat === "gated") {
-    return { accessibility: "Gated", accessibilityScore: 3 };
-  }
-  return { accessibility: "API only", accessibilityScore: 1 };
+function joinRow(metric: AaSiteRow, meta: AaSiteRow | undefined): AaSiteRow {
+  return {
+    ...metric,
+    name: meta?.name ?? metric.shortName,
+    creator: meta?.creator ?? null,
+    modelCreatorName: meta?.creator?.name ?? metric.modelCreatorName,
+    deprecated: meta?.deprecated === true || metric.deprecated === true,
+    isOpenWeights: metric.isOpenWeights === true || meta?.isOpenWeights === true,
+    releaseDate: meta?.releaseDate,
+  };
 }
 
-function toModelRecord(m: AaSiteModel, fetchedAt: string): ModelRecord | null {
-  if (!m.slug || !m.name) return null;
-  const intelligence = num(m.intelligenceIndex);
+function toModelRecord(row: AaSiteRow, fetchedAt: string): ModelRecord | null {
+  if (!row.slug || !row.name) return null;
+  // AA keeps retired models in the payload for history. They must never rank
+  // against current ones.
+  if (row.deprecated === true) return null;
+
+  const intelligence = num(row.intelligenceIndex);
   if (intelligence <= 0) return null;
 
-  const priceInput = num(m.price1mInputTokens);
-  const priceOutput = num(m.price1mOutputTokens);
+  const priceInput = num(row.price1mInputTokens);
+  const priceOutput = num(row.price1mOutputTokens);
   // Prefer AA's standard 3:1 blend (public field is price1mBlended0To3To1).
   // Never use 7:2:1 cache-heavy blends — they understate frontier API cost.
   const priceBlended =
-    num(m.price1mBlended0To3To1) ||
-    num(m.price1mBlended3To1) ||
+    num(row.price1mBlended0To3To1) ||
+    num(row.price1mBlended3To1) ||
     (priceInput || priceOutput ? blendedPrice(priceInput, priceOutput) : 0);
 
   const speed =
-    num(m.medianOutputTokensPerSecond) ||
-    num(m.medianOutputSpeed) ||
-    num(m.medianCanonicalAnswerOutputSpeed);
+    num(row.medianOutputTokensPerSecond) ||
+    num(row.medianOutputSpeed) ||
+    num(row.medianCanonicalAnswerOutputSpeed);
 
-  const latency = num(m.medianTimeToFirstTokenSeconds) || num(m.medianTimeToFirstChunk);
+  const latency = num(row.medianTimeToFirstTokenSeconds) || num(row.medianTimeToFirstChunk);
 
-  const access = accessibilityFor(m);
+  const openWeights = row.isOpenWeights === true;
 
   return {
-    slug: m.slug,
-    name: m.name,
-    creator: m.creator?.name ?? "Unknown",
+    slug: row.slug,
+    name: row.name,
+    creator: row.creator?.name ?? row.modelCreatorName ?? "Unknown",
     intelligence,
-    coding: num(m.codingIndex),
-    math: num(m.mathIndex),
+    // AA's public leaderboard no longer publishes the composite Coding/Math
+    // indexes (only raw eval scores). The keyed API still does, and its rows
+    // merge in when a working AA_API_KEY is configured.
+    coding: 0,
+    math: 0,
     priceInput,
     priceOutput,
     priceBlended,
     speed,
     latency,
-    accessibility: access.accessibility,
-    accessibilityScore: access.accessibilityScore,
+    accessibility: openWeights ? "Open weights" : "API only",
+    accessibilityScore: openWeights ? 4 : 1,
     fetchedAt,
-    url: `https://artificialanalysis.ai/models/${m.slug}`,
+    url: `https://artificialanalysis.ai/models/${row.slug}`,
   };
 }
 
@@ -203,7 +201,8 @@ async function fetchPayload(url: string): Promise<string | null> {
 
 /**
  * Free, no-key fetch of Artificial Analysis public leaderboard (RSC payload).
- * Prefer this for field completeness (speed, pricing, frontier models).
+ * This is the primary benchmark source: it carries the full current model list
+ * with creator, pricing and speed, and needs no API key.
  */
 export async function fetchAaPublicSiteModels(): Promise<ModelRecord[]> {
   const fetchedAt = new Date().toISOString();
@@ -213,24 +212,24 @@ export async function fetchAaPublicSiteModels(): Promise<ModelRecord[]> {
       const payload = await fetchPayload(url);
       if (!payload) continue;
 
-      const raw = parseSiteModels(payload);
-      const models = raw
-        .map((m) => toModelRecord(m, fetchedAt))
+      const { metrics, metadata } = indexSiteRows(payload);
+      const rows = [...metrics.values()].map((m) => joinRow(m, metadata.get(m.slug ?? "")));
+      const models = rows
+        .map((r) => toModelRecord(r, fetchedAt))
         .filter((m): m is ModelRecord => m !== null);
 
       if (models.length === 0) {
-        console.warn(`[AA Public] Parsed 0 models from ${url}`);
+        console.warn(`[AA Public] Parsed 0 live models from ${url} (${metrics.size} metric rows)`);
         continue;
       }
 
+      const withCreator = models.filter((m) => m.creator !== "Unknown").length;
       const withSpeed = models.filter((m) => m.speed > 0).length;
-      const withCoding = models.filter((m) => m.coding > 0).length;
       const withPrice = models.filter((m) => m.priceBlended > 0).length;
-      const hasFable = models.some((m) => m.slug.includes("fable"));
       console.log(
         `[AA Public] Fetched ${models.length} models from ${url}` +
-          ` (coding=${withCoding}, speed=${withSpeed}, price=${withPrice}` +
-          (hasFable ? ", includes Fable)" : ", Fable not found)"),
+          ` (${metrics.size - models.length} deprecated skipped, creator=${withCreator},` +
+          ` speed=${withSpeed}, price=${withPrice})`,
       );
       return models;
     } catch (err) {

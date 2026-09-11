@@ -256,19 +256,25 @@ function renderBriefing() {
   const el = document.getElementById("briefing");
   const b = state.briefing;
   if (!b) {
-    el.innerHTML = `<p class="muted">Loading analyst briefing… Configure GEMINI_API_KEY in .env for AI-powered summaries (Groq/Ollama optional).</p>`;
+    el.innerHTML = `<p class="muted">Loading analyst briefing… Configure DEEPSEEK_API_KEY in .env for AI-powered summaries (Gemini/Groq/Ollama optional).</p>`;
     renderRoleGapBanner();
     return;
   }
 
   const sourceLabel =
-    b.analystSource === "gemini"
-      ? "Gemini"
-      : b.analystSource === "groq"
-        ? "Groq AI"
-        : b.analystSource === "ollama"
-          ? "Ollama"
-          : "Rule-based";
+    b.analystSource === "deepseek"
+      ? "DeepSeek V4"
+      : b.analystSource === "gemini"
+        ? "Gemini"
+        : b.analystSource === "groq"
+          ? "Groq AI"
+          : b.analystSource === "cerebras"
+            ? "Cerebras"
+            : b.analystSource === "openrouter"
+              ? "OpenRouter"
+              : b.analystSource === "ollama"
+                ? "Ollama"
+                : "Rule-based";
   const gaps = state.stack?.roleGaps ?? [];
   // Live role-gap banner owns missing-role suggestions; hide stale briefing upgrade if it's a gap.
   const showUpgrade =

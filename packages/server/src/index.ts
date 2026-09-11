@@ -16,6 +16,8 @@ import {
   getNotificationPrefs,
   saveNotificationPrefs,
   upsertModels,
+  deleteModelsBySlugs,
+  listModelSlugs,
   upsertNews,
   clearNewsWithHtml,
   clearLatestBriefingUpgrade,
@@ -24,7 +26,7 @@ import {
   setMeta,
   getMeta,
 } from "./db.js";
-import { fetchArtificialAnalysisModels } from "./fetchers/artificial-analysis.js";
+import { fetchArtificialAnalysisModels, LEGACY_DEMO_SLUGS } from "./fetchers/artificial-analysis.js";
 import { fetchAaPublicSiteModels } from "./fetchers/aa-public-site.js";
 import { mergeBenchmarkModels } from "./fetchers/merge-models.js";
 import { enrichAccessibility } from "./fetchers/huggingface-access.js";
@@ -98,15 +100,20 @@ const BIND_HOST = process.env.AI_PULSE_BIND_HOST || "127.0.0.1";
 const AA_KEY = process.env.AA_API_KEY;
 const GROQ_KEY = process.env.GROQ_API_KEY;
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
+const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY;
 const TAVILY_KEY = process.env.TAVILY_API_KEY;
 const CEREBRAS_KEY = process.env.CEREBRAS_API_KEY;
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
 const AA_POLL = Number(process.env.AA_POLL_INTERVAL_MS) || 7_200_000;
 const RSS_POLL = Number(process.env.RSS_POLL_INTERVAL_MS) || 1_200_000;
 const YT_POLL = Number(process.env.YT_POLL_INTERVAL_MS) || 1_800_000;
+// Below this the fetch is a thin fallback page, not the full leaderboard:
+// pruning against it would wipe models that simply were not in that payload.
+const MIN_MODELS_FOR_PRUNE = 100;
 
 const webRoot = process.env.AI_PULSE_WEB_DIR ?? path.join(__dirname, "..", "..", "web");
 const analystEnv = {
+  deepseekKey: DEEPSEEK_KEY,
   geminiKey: GEMINI_KEY,
   groqKey: GROQ_KEY,
   cerebrasKey: CEREBRAS_KEY,
@@ -457,6 +464,22 @@ async function pollBenchmarks(): Promise<void> {
     raw.sort((a, b) => b.intelligence - a.intelligence);
     // Persist + broadcast first; HF accessibility lookups are slow and must not block readiness.
     const newSlugs = upsertModels(raw);
+
+    // Rows no source reports anymore must not keep ranking. Slugs still present
+    // in `raw` were just rewritten with live values, so only the leftovers go.
+    const liveSlugs = new Set(raw.map((m) => m.slug));
+    const removedDemo = deleteModelsBySlugs(LEGACY_DEMO_SLUGS.filter((slug) => !liveSlugs.has(slug)));
+    if (removedDemo.length > 0) {
+      console.log(`[Poll] Dropped ${removedDemo.length} legacy demo rows: ${removedDemo.join(", ")}`);
+    }
+    if (raw.length >= MIN_MODELS_FOR_PRUNE) {
+      const obsolete = listModelSlugs().filter((slug) => !liveSlugs.has(slug));
+      const pruned = deleteModelsBySlugs(obsolete).length;
+      if (pruned > 0) {
+        console.log(`[Poll] Pruned ${pruned} models absent from the live feed`);
+      }
+    }
+
     recordSuccessfulPoll();
     const snapshot = buildRankingsSnapshot(getAllModels(), AA_POLL);
     const leaderChanges = detectLeaderChanges(snapshot.winners);
