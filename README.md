@@ -43,7 +43,7 @@ That's it. AI Pulse now runs in your tray and starts automatically on login (you
 
 ## Why it stays reliable
 
-AI curation never depends on a single provider. A router tries **DeepSeek V4 Pro → DeepSeek V4.1 Flash → Gemini → Cerebras → Groq → OpenRouter** (you only need one key; more = more resilient), backs off from rate-limited providers, and **never silently dies** — the app always shows whether curation is healthy or degraded. Benchmark rankings come from Artificial Analysis' public leaderboard and need no key at all; an `AA_API_KEY` only enriches them. The desktop app **supervises** the background server and restarts it automatically on crash *or* hang. Details in [docs/RELIABILITY.md](docs/RELIABILITY.md).
+AI curation never depends on a single provider. A router tries **DeepSeek V4.1 Flash → DeepSeek V4 Pro → Gemini → Cerebras → Groq → OpenRouter** (you only need one key; more = more resilient), backs off from rate-limited providers, and **never silently dies** — the app always shows whether curation is healthy or degraded. Benchmark rankings come from Artificial Analysis' public leaderboard and need no key at all; an `AA_API_KEY` only enriches them. The desktop app **supervises** the background server and restarts it automatically on crash *or* hang. Details in [docs/RELIABILITY.md](docs/RELIABILITY.md).
 
 ## The app is the control center
 

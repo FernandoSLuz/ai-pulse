@@ -3,7 +3,7 @@ const api = window.aiPulse;
 
 // curator: true => powers AI curation (the rotation). You need at least one.
 const KEY_META = {
-  DEEPSEEK_API_KEY: { label: "DeepSeek", role: "AI curator · V4 Pro (preferred)", hint: "Owner's primary curator — used first", url: "https://platform.deepseek.com/api_keys", curator: true },
+  DEEPSEEK_API_KEY: { label: "DeepSeek", role: "AI curator · V4.1 Flash (preferred)", hint: "Owner's primary curator — used first; V4 Pro as backup", url: "https://platform.deepseek.com/api_keys", curator: true },
   GEMINI_API_KEY: { label: "Gemini", role: "AI curator · 3.5 & 2.5 Flash", hint: "Fallback free tier", url: "https://aistudio.google.com/apikey", curator: true },
   CEREBRAS_API_KEY: { label: "Cerebras", role: "AI curator · Llama 3.3 70B", hint: "Fast, generous free tier", url: "https://cloud.cerebras.ai", curator: true },
   GROQ_API_KEY: { label: "Groq", role: "AI curator · Llama 3.1 8B", hint: "Fast; small daily budget", url: "https://console.groq.com/keys", curator: true },

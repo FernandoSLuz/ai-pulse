@@ -78,15 +78,75 @@ function stateOf(id: string): CandidateState {
   return s;
 }
 
+/**
+ * Close a JSON document the model left unbalanced (missing trailing `}`/`]`,
+ * an unterminated string, or a dangling comma). Reasoning models — DeepSeek
+ * Flash especially — occasionally stop one token short on long structured
+ * answers; that must not throw the whole curation away.
+ */
+function repairTruncatedJson(text: string): string | null {
+  const start = text.indexOf("{");
+  if (start < 0) return null;
+
+  const stack: string[] = [];
+  let inString = false;
+  let escape = false;
+  let out = "";
+
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      out += ch;
+      if (escape) escape = false;
+      else if (ch === "\\") escape = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      out += ch;
+      continue;
+    }
+    if (ch === "{" || ch === "[") {
+      stack.push(ch);
+      out += ch;
+      continue;
+    }
+    if (ch === "}" || ch === "]") {
+      stack.pop();
+      out = out.replace(/,\s*$/, ""); // models like a trailing comma before a closer
+      out += ch;
+      if (stack.length === 0) return out; // root already complete
+      continue;
+    }
+    out += ch;
+  }
+
+  if (inString) out += '"';
+  while (stack.length > 0) {
+    out = out.replace(/,\s*$/, "");
+    out += stack.pop() === "{" ? "}" : "]";
+  }
+  return out;
+}
+
 export function extractJsonObject(text: string): Record<string, unknown> | null {
   const trimmed = text.trim();
   try {
     return JSON.parse(trimmed) as Record<string, unknown>;
   } catch {
     const match = trimmed.match(/\{[\s\S]*\}/);
-    if (!match) return null;
+    if (match) {
+      try {
+        return JSON.parse(match[0]) as Record<string, unknown>;
+      } catch {
+        /* fall through to the repair pass */
+      }
+    }
+    const repaired = repairTruncatedJson(trimmed);
+    if (!repaired) return null;
     try {
-      return JSON.parse(match[0]) as Record<string, unknown>;
+      return JSON.parse(repaired) as Record<string, unknown>;
     } catch {
       return null;
     }
@@ -200,34 +260,18 @@ async function callOpenAICompatibleJson(opts: {
 }
 
 // ---- Candidate list (priority order) ---------------------------------------
-// DeepSeek V4 leads: it is the curator the owner asked for, and one paid key
-// with a large context is steadier than a stack of free tiers. Everything
-// below stays as spillover for installs without a DeepSeek key (or when it is
-// rate-limited): Gemini Flash, Cerebras, a light Groq model, then OpenRouter.
+// DeepSeek V4.1 Flash leads: it is the curator the owner picked (fast, cheap,
+// and steady on the ~10k-token curation prompt), with V4 Pro as the second
+// DeepSeek slot for hard runs. Everything below stays as spillover for
+// installs without a DeepSeek key (or when it is rate-limited): Gemini Flash,
+// Cerebras, a light Groq model, then OpenRouter.
 
 const DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1";
-// V4 Pro is a reasoning model and the curation prompt is ~10k tokens: a cold
-// call can exceed the 45s default before it emits any JSON.
+// The curation prompt is ~10k tokens and DeepSeek's reasoning models can take
+// a while on a cold call — well past the 45s default.
 const DEEPSEEK_TIMEOUT_MS = 120_000;
 
 const CANDIDATES: Candidate[] = [
-  {
-    id: "deepseek:deepseek-v4-pro",
-    provider: "deepseek",
-    model: "deepseek-v4-pro",
-    label: "DeepSeek V4 Pro",
-    keyOf: (e) => e.deepseekKey,
-    call: (prompt, key) =>
-      callOpenAICompatibleJson({
-        baseUrl: DEEPSEEK_BASE_URL,
-        model: "deepseek-v4-pro",
-        prompt,
-        apiKey: key,
-        jsonMode: true,
-        timeoutMs: DEEPSEEK_TIMEOUT_MS,
-        label: "DeepSeek",
-      }),
-  },
   {
     id: "deepseek:deepseek-flash",
     provider: "deepseek",
@@ -238,6 +282,23 @@ const CANDIDATES: Candidate[] = [
       callOpenAICompatibleJson({
         baseUrl: DEEPSEEK_BASE_URL,
         model: "deepseek-flash",
+        prompt,
+        apiKey: key,
+        jsonMode: true,
+        timeoutMs: DEEPSEEK_TIMEOUT_MS,
+        label: "DeepSeek",
+      }),
+  },
+  {
+    id: "deepseek:deepseek-v4-pro",
+    provider: "deepseek",
+    model: "deepseek-v4-pro",
+    label: "DeepSeek V4 Pro",
+    keyOf: (e) => e.deepseekKey,
+    call: (prompt, key) =>
+      callOpenAICompatibleJson({
+        baseUrl: DEEPSEEK_BASE_URL,
+        model: "deepseek-v4-pro",
         prompt,
         apiKey: key,
         jsonMode: true,

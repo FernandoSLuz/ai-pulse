@@ -34,9 +34,10 @@ Fonte única: `README.md` + `docs/ARCHITECTURE.md` + `docs/CONFIGURATION.md` +
   é enriquecimento opcional (índices compostos de coding/math) e NUNCA pode gerar linhas
   sintéticas/demo. Com feed completo (≥100 modelos) o poll poda linhas ausentes: o banco espelha
   o feed em vez de acumular modelos aposentados.
-- Curadoria de IA: `deepseek-v4-pro` é o primeiro candidato do router (`deepseek-flash` depois);
-  Gemini/Cerebras/Groq/OpenRouter são spillover. Chave `DEEPSEEK_API_KEY` (`.env` em dev,
-  `config.json` no app); os modelos de raciocínio pedem timeout maior que o padrão de 45s.
+- Curadoria de IA: `deepseek-flash` (V4.1 Flash) é o primeiro candidato do router
+  (`deepseek-v4-pro` depois); Gemini/Cerebras/Groq/OpenRouter são spillover. Chave
+  `DEEPSEEK_API_KEY` (`.env` em dev, `config.json` no app); os modelos de raciocínio pedem
+  timeout maior que o padrão de 45s.
 - `GET /api/videos` sem `kind` = `kind=creator` — contrato do `widget.html` (`?limit=3`).
   Payload WS `{type:"videos"}`: `items` = creators, `companyItems` = empresas. Não renomear campos.
 - Toda URL de feed nova: verificar por GET (200 + parseia RSS/Atom + item ≤90 dias) antes de

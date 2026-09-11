@@ -14,8 +14,8 @@ The router always tries candidates in this fixed order:
 
 | # | Provider | Model |
 |---|----------|-------|
-| 1 | DeepSeek | V4 Pro |
-| 2 | DeepSeek | V4.1 Flash |
+| 1 | DeepSeek | V4.1 Flash |
+| 2 | DeepSeek | V4 Pro |
 | 3 | Gemini | 3.5 Flash |
 | 4 | Cerebras | Llama 3.3 70B |
 | 5 | Groq | Llama 3.1 8B |

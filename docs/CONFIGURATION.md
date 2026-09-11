@@ -23,7 +23,7 @@ Add these in **Settings → Connections**. You need at least **one** AI provider
 
 | Provider | Powers | Get a key | Required? |
 | --- | --- | --- | --- |
-| DeepSeek | AI curation (router, tried first: V4 Pro → V4.1 Flash) | https://platform.deepseek.com/api_keys | At least one AI key required* |
+| DeepSeek | AI curation (router, tried first: V4.1 Flash → V4 Pro) | https://platform.deepseek.com/api_keys | At least one AI key required* |
 | Gemini | AI curation (router) + chat web-search grounding fallback | https://aistudio.google.com/apikey | Optional* |
 | Cerebras | AI curation (router) | https://cloud.cerebras.ai | Optional* |
 | Groq | AI curation (router) | https://console.groq.com/keys | Optional* |
@@ -42,8 +42,8 @@ Notes on the optional keys:
 
 AI curation is **cloud-only** (no local models). An LLM router tries providers in a fixed order and uses the **first one that answers with valid JSON**:
 
-1. DeepSeek V4 Pro
-2. DeepSeek V4.1 Flash
+1. DeepSeek V4.1 Flash
+2. DeepSeek V4 Pro
 3. Gemini 3.5 Flash
 4. Cerebras Llama 3.3 70B
 5. Groq Llama 3.1 8B

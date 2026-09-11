@@ -69,7 +69,7 @@ Your data and settings live in `~/.config/AI Pulse/` (`config.json`, `data/ai-pu
 
 On first launch, AI Pulse opens the **Settings** window. Under the **Connections** section, add **at least one** AI provider key so curation works.
 
-We recommend starting with **DeepSeek** (V4 Pro is tried first). Adding more providers makes AI curation more resilient. Benchmark rankings need no key at all.
+We recommend starting with **DeepSeek** (V4.1 Flash is tried first). Adding more providers makes AI curation more resilient. Benchmark rankings need no key at all.
 
 | Provider | Where to get a key |
 | --- | --- |
