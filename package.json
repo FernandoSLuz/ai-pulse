@@ -13,7 +13,7 @@
     "dist:linux": "npm run dist:linux -w @ai-pulse/widget",
     "gate": "npm run build && node --check packages/web/app.js && node --check packages/web/x-embed.js && node --check packages/widget/renderer/settings.js && npm run smoke",
     "linux:install": "npm run linux:install -w @ai-pulse/widget",
-    "smoke": "node --import tsx packages/server/scripts/smoke-regressions.ts && node --import tsx packages/server/scripts/news-smoke-regressions.ts && node --import tsx packages/server/scripts/storage-smoke-regressions.ts && node --import tsx packages/server/scripts/social-smoke-regressions.ts && node --import tsx packages/server/scripts/public-sources-smoke.ts && node --import tsx packages/server/scripts/youtube-channels-smoke.ts && node packages/server/scripts/x-embed-smoke.mjs"
+    "smoke": "node --import tsx packages/server/scripts/smoke-regressions.ts && node --import tsx packages/server/scripts/news-smoke-regressions.ts && node --import tsx packages/server/scripts/storage-smoke-regressions.ts && node --import tsx packages/server/scripts/social-smoke-regressions.ts && node --import tsx packages/server/scripts/public-sources-smoke.ts && node --import tsx packages/server/scripts/youtube-channels-smoke.ts && node packages/server/scripts/x-embed-smoke.mjs && node --import tsx packages/server/scripts/x-embed-host-smoke.ts"
   },
   "version": "2.0.1",
   "engines": {

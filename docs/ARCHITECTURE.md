@@ -197,6 +197,12 @@ The default social mode is `embed`: the dashboard uses X's public embedded
 profile view and requires no API token. Input is normalized from a username,
 `@username`, or an `x.com`/`twitter.com` profile URL. X can restrict protected
 or login-required profiles, so embed mode does not guarantee post visibility.
+The official widget runs on a separate loopback server with an ephemeral port.
+That origin serves only the three embed assets, never the application API. It
+allows the widget's nested-frame bootstrap while the dashboard's API remains
+protected by its own origin checks. The embed HTML cannot execute on the main
+server origin, including through encoded static paths. Failed embeds collapse
+to a compact status and profile link, without an automatic retry loop.
 When `X_API_BEARER_TOKEN` is configured, `api` mode fetches the official feed as
 a separate optional path; it does not replace or enable local AI inference.
 

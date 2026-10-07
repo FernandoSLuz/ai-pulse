@@ -79,8 +79,8 @@ export async function refreshSocial(_force = false): Promise<SocialState> {
   return refreshPromise;
 }
 
-export function registerSocialRoutes(app: Express): void {
-  app.get("/api/social", (_req, res) => res.json(state()));
+export function registerSocialRoutes(app: Express, embedOrigin: string | null = null): void {
+  app.get("/api/social", (_req, res) => res.json({ ...state(), embedOrigin }));
   app.post("/api/social/profiles", async (req: Request, res: Response) => {
     const handle = normalizeXHandle(req.body?.handle);
     if (!handle) return res.status(400).json({ error: "Invalid X handle" });

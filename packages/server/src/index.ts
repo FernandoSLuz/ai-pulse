@@ -62,6 +62,7 @@ import { getLocalAIStatus, initializeLocalAI, setupLocalAI, cancelLocalAISetup, 
 import { registerSocialRoutes, initializeSocialPolling, stopSocialPolling } from "./social/routes.js";
 import { getPublicBenchmarks, refreshPublicBenchmarks, startPublicBenchmarkPolling, stopPublicBenchmarkPolling } from "./benchmarks/public-sources.js";
 import { registerYouTubeChannelRoutes } from "./youtube/routes.js";
+import { startXEmbedHost } from "./social/embed-host.js";
 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -121,6 +122,12 @@ onThemeChange((theme) => broadcast({ type: "theme", payload: { name: theme.name,
 
 const app = express();
 const ALLOWED_ORIGINS = new Set([`http://localhost:${PORT}`, `http://127.0.0.1:${PORT}`]);
+// X's widget needs same-origin access to its own nested frames. Give it a
+// separate, read-only origin rather than the dashboard/API's origin.
+const embedHost = await startXEmbedHost(webRoot, [...ALLOWED_ORIGINS]).catch((err) => {
+  console.warn("[X embed] Isolated host unavailable:", err.message);
+  return null;
+});
 app.use(cors({ origin: [...ALLOWED_ORIGINS] }));
 // CORS only governs reads; a cross-site page can still fire simple POSTs at
 // loopback. Reject mutating requests whose Origin is not ours (non-browser
@@ -135,29 +142,16 @@ app.use((req, res, next) => {
 });
 app.use(express.json());
 
-// The X timeline is deliberately isolated in its own document. Keep its CSP
-// separate from the dashboard so the third-party widget never gains access to
-// the local API or the parent application's scripts.
-app.get("/x-embed.html", (_req, res) => {
-  res.set({
-    "Content-Security-Policy": [
-      "default-src 'none'",
-      "base-uri 'none'",
-      "form-action 'none'",
-      "script-src 'self' https://platform.twitter.com",
-      "style-src 'self' 'unsafe-inline'",
-      "img-src https://*.twimg.com https://*.x.com data:",
-      "font-src https://*.twimg.com data:",
-      "frame-src https://platform.twitter.com https://syndication.twitter.com",
-      "child-src https://platform.twitter.com https://syndication.twitter.com",
-      "connect-src https://platform.twitter.com https://syndication.twitter.com https://cdn.syndication.twimg.com https://api.x.com https://x.com",
-      "sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox",
-    ].join("; "),
-    "Cache-Control": "no-store",
-  });
-  res.sendFile(path.join(webRoot, "x-embed.html"));
-});
-app.use(express.static(webRoot));
+app.use(express.static(webRoot, {
+  setHeaders(res, filePath) {
+    // Also covers encoded paths resolved by express.static: the wrapper may
+    // only execute on the dedicated host, never on the local API's origin.
+    if (path.basename(filePath).toLowerCase() === "x-embed.html") {
+      res.setHeader("Content-Security-Policy", "default-src 'none'; sandbox");
+      res.setHeader("Cache-Control", "no-store");
+    }
+  },
+}));
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({
@@ -235,7 +229,7 @@ app.post("/api/local-ai/cancel", (_req, res) => {
   cancelLocalAISetup();
   res.json(localAIResponse());
 });
-registerSocialRoutes(app);
+registerSocialRoutes(app, embedHost?.origin ?? null);
 registerYouTubeChannelRoutes(app);
 
 app.get("/api/health", (_req, res) => {
@@ -849,6 +843,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   for (const client of clients) client.terminate();
   wss.close();
   server.close();
+  await embedHost?.close();
   try {
     getDb().close();
   } catch (err) {
