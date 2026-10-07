@@ -29,6 +29,13 @@ interface AaRawModel {
   median_time_to_first_token_seconds?: number;
 }
 
+function nullablePrice(value: unknown): number | null {
+  if (typeof value === "boolean" || value === null || value === undefined || (typeof value === "string" && value.trim() === "")) return null;
+  if (typeof value !== "number" && typeof value !== "string") return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
 function blendedPrice(input: number, output: number): number {
   return input * 0.75 + output * 0.25;
 }
@@ -40,9 +47,11 @@ function normalizeModel(raw: AaRawModel): ModelRecord | null {
   const evals = raw.evaluations ?? {};
   const pricing = raw.pricing ?? {};
   const perf = raw.performance ?? {};
-  const priceInput = pricing.price_1m_input_tokens ?? 0;
-  const priceOutput = pricing.price_1m_output_tokens ?? 0;
-  const priceBlended = pricing.price_1m_blended_3_to_1 ?? blendedPrice(priceInput, priceOutput);
+  const priceInput = nullablePrice(pricing.price_1m_input_tokens);
+  const priceOutput = nullablePrice(pricing.price_1m_output_tokens);
+  const explicitBlended = nullablePrice(pricing.price_1m_blended_3_to_1);
+  const priceBlended = explicitBlended ??
+    (priceInput !== null && priceOutput !== null ? blendedPrice(priceInput, priceOutput) : null);
 
   const speed =
     perf.median_output_tokens_per_second ??
@@ -65,8 +74,12 @@ function normalizeModel(raw: AaRawModel): ModelRecord | null {
     priceBlended,
     speed,
     latency,
-    accessibility: "API only",
-    accessibilityScore: 1,
+    accessibility: "Unknown",
+    accessibilityScore: 0,
+    license: null,
+    licenseUrl: null,
+    weightsUrl: null,
+    priceSourceUrl: `https://artificialanalysis.ai/api/v2/language/models/free`,
     fetchedAt: new Date().toISOString(),
   };
 }

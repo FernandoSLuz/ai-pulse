@@ -8,12 +8,12 @@ This guide covers the most common issues with **AI Pulse** and how to fix them. 
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
-| **"AI: degraded (rules)"** shown in the app | Every configured provider is rate-limited, or you have no provider key at all | Add another provider key (e.g. **DeepSeek**, **Cerebras** or **OpenRouter**) in **Settings → Connections**, then wait for the rate-limit cooldown to clear. Curation resumes automatically once a provider answers. |
+| **"AI: degraded (rules)"** shown in the app | The local model is downloading, cancelled, unavailable, or failed to start | Open **Settings → Local AI**, resume/retry the verified download, or keep using rules mode. |
 | Background service won't start, or keeps restarting | The server port is already in use, or a bad build | Change the port in **Settings → Startup & service → Server port**, then check the logs via **Settings → Open logs**. |
 | **"Server offline"** / no data anywhere | The background service is stopped | Open the **tray → Start Background Service**. |
 | No live benchmarks | The public Artificial Analysis fetch failed (network/DNS), or the app was built before the current parser | Check **Settings → Open logs** for `[AA Public]` lines. An `AA_API_KEY` is optional enrichment, not a requirement. |
-| Chat shows no models | No AI provider key configured | Add a **Gemini** or **Groq** key in **Settings → Connections**. |
-| Web search in chat is off | No search provider configured | Add a **Tavily** or **Gemini** key in **Settings → Connections**. |
+| Chat shows no models | The local runtime/model is not ready | Open **Settings → Local AI** and resume the model setup. |
+| Web search in chat is off | Tavily is not configured or network access failed | Add optional `TAVILY_API_KEY` in **Settings → Connections**. |
 | Clicking the dashboard **gear** does nothing | The desktop app isn't installed or the `aipulse://` protocol isn't registered | Use the browser's **"Edit here instead"** fallback drawer, or open the app from the **tray**. |
 | Port **3847** already in use | Another process (or a second copy of AI Pulse) holds the port | Change the port in **Settings → Startup & service → Server port**. |
 | Installer blocked by **SmartScreen** | Windows doesn't recognize the publisher yet | Click **More info → Run anyway**. |
@@ -29,18 +29,11 @@ This guide covers the most common issues with **AI Pulse** and how to fix them. 
 
 ## "AI: degraded (rules)"
 
-AI Pulse rotates across several free cloud providers and uses the first that returns valid JSON. When you see **"AI: degraded (rules)"**, none of your configured providers answered, so curation fell back to deterministic rules.
+AI Pulse runs its analyst and chat locally. When you see **"AI: degraded (rules)"**, the local model is not ready and deterministic rules are serving the app.
 
-- You need **at least one** provider key; adding more makes curation more resilient.
-- Each provider backs off independently: rate-limited providers honor the retry hint, so a cooldown may need to pass before they recover.
-- Add keys under **Settings → Connections**. Get them here:
-  - DeepSeek (preferred) — https://platform.deepseek.com/api_keys
-  - Gemini — https://aistudio.google.com/apikey
-  - Cerebras — https://cloud.cerebras.ai
-  - Groq — https://console.groq.com/keys
-  - OpenRouter — https://openrouter.ai/keys
-
-Once a provider responds, the app switches the status back to, for example, **"AI: DeepSeek V4 ✓"**.
+- Resume or retry the model download under **Settings → Local AI**.
+- Verify that the configured model hash completed and that enough disk/RAM is available.
+- No external model key is required or used as fallback.
 
 ## The service won't start or keeps restarting
 
@@ -60,8 +53,8 @@ If the web dashboard shows **"Server offline"** or no content loads, the backgro
 These features each depend on a specific key in **Settings → Connections**:
 
 - **Benchmarks:** no key needed — rankings come from the public Artificial Analysis leaderboard. An `AA_API_KEY` only enriches rows with the composite coding/math indexes.
-- **Chat models:** add a **Gemini** or **Groq** key.
-- **Chat web search:** add a **Tavily** key (preferred) or a **Gemini** key (grounding fallback).
+- **Chat models:** use the configured local GGUF; no key is required.
+- **Chat web search:** add an optional `TAVILY_API_KEY`; it provides search only.
 
 ## The dashboard gear does nothing
 

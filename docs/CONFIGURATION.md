@@ -1,63 +1,44 @@
 # Configuration
 
-In the packaged app, **all settings and API keys live in the app's Settings window** — there is no `.env` file to edit. The desktop app is the single control surface: it stores your preferences and keys, then injects the keys into the background server process for you.
+In the packaged app, **all settings and optional integration tokens live in the app's Settings window** — there is no `.env` file to edit. AI analysis and chat run locally through the configured GGUF runtime.
 
 > The dev-only `.env` workflow is described at the end, under [Developer environment variables](#developer-environment-variables).
 
 ## Where your configuration lives
 
-The packaged app keeps everything under Electron's `userData` directory. On Windows that resolves to `%APPDATA%\AI Pulse`; on Linux to `~/.config/AI Pulse`.
+The packaged app keeps everything under Electron's `userData` directory. On Windows that resolves to `%APPDATA%\AI Pulse`, on macOS to `~/Library/Application Support/AI Pulse`, and on Linux to `~/.config/AI Pulse`.
 
-| What | Windows | Linux | Notes |
-| --- | --- | --- | --- |
-| API keys + preferences | `%APPDATA%\AI Pulse\config.json` | `~/.config/AI Pulse/config.json` | The app is the only place you edit this. Keys are injected into the server child's environment at launch. |
-| SQLite database | `%APPDATA%\AI Pulse\data\ai-pulse.db` | `~/.config/AI Pulse/data/ai-pulse.db` | Directory overridable via `AI_PULSE_DATA_DIR`. |
-| Server logs | `%APPDATA%\AI Pulse\logs\server.log` | `~/.config/AI Pulse/logs/server.log` | Rotated at 5 MB. |
-| Updater log | `%APPDATA%\AI Pulse\logs\updater.log` | `~/.config/AI Pulse/logs/updater.log` | electron-updater output. |
+| What | Windows | macOS | Linux | Notes |
+| --- | --- | --- | --- | --- |
+| Preferences, local AI profile, and optional tokens | `%APPDATA%\AI Pulse\config.json` | `~/Library/Application Support/AI Pulse/config.json` | `~/.config/AI Pulse/config.json` | The app is the only place you edit this. |
+| SQLite database | `%APPDATA%\AI Pulse\data\ai-pulse.db` | `~/Library/Application Support/AI Pulse/data/ai-pulse.db` | `~/.config/AI Pulse/data/ai-pulse.db` | Directory overridable via `AI_PULSE_DATA_DIR`. |
+| Server logs | `%APPDATA%\AI Pulse\logs\server.log` | `~/Library/Application Support/AI Pulse/logs/server.log` | `~/.config/AI Pulse/logs/server.log` | Rotated at 5 MB. |
+| Updater log | `%APPDATA%\AI Pulse\logs\updater.log` | `~/Library/Application Support/AI Pulse/logs/updater.log` | `~/.config/AI Pulse/logs/updater.log` | electron-updater output. |
 
 On Linux the app also writes a few desktop-integration files outside `userData` (`ai-pulse.desktop`, the icon, and the XDG autostart entry) — see [INSTALL.md](./INSTALL.md#what-the-app-sets-up-on-linux).
 
-## API keys
+## Optional integrations
 
-Add these in **Settings → Connections**. You need at least **one** AI provider key; the rest are optional and unlock or harden specific features.
+Add these in **Settings → Connections**. No AI provider key is required.
 
 | Provider | Powers | Get a key | Required? |
 | --- | --- | --- | --- |
-| DeepSeek | AI curation (router, tried first: V4.1 Flash → V4 Pro) | https://platform.deepseek.com/api_keys | At least one AI key required* |
-| Gemini | AI curation (router) + chat web-search grounding fallback | https://aistudio.google.com/apikey | Optional* |
-| Cerebras | AI curation (router) | https://cloud.cerebras.ai | Optional* |
-| Groq | AI curation (router) | https://console.groq.com/keys | Optional* |
-| OpenRouter | AI curation (router) | https://openrouter.ai/keys | Optional* |
 | Artificial Analysis (`AA_API_KEY`) | Benchmark enrichment (rankings work without it) | https://artificialanalysis.ai/insights | Optional |
-| Tavily | Chat web-search agent (preferred) | https://app.tavily.com | Optional |
-
-\* DeepSeek, Gemini, Cerebras, Groq, and OpenRouter are the AI curation providers. **You must supply at least one of them.** Each is individually optional, but adding more makes curation more resilient.
+| Tavily (`TAVILY_API_KEY`) | Web search only | https://app.tavily.com | Optional |
+| X (`X_API_BEARER_TOKEN`) | Official X posts; without it profiles are links | X developer portal | Optional |
 
 Notes on the optional keys:
 
 - **Artificial Analysis** is *not* required for rankings: AI Pulse reads the public leaderboard directly. The keyed `/free` endpoint only enriches rows (composite coding/math indexes) and is skipped quietly when the key is missing or rejected.
-- **Chat web search** prefers **Tavily**. Without it, the agent falls back to **Gemini grounding**.
+- **Chat web search** uses **Tavily** when configured; it is not a model provider.
 
-## AI provider rotation
+## Local AI setup
 
-AI curation is **cloud-only** (no local models). An LLM router tries providers in a fixed order and uses the **first one that answers with valid JSON**:
-
-1. DeepSeek V4.1 Flash
-2. DeepSeek V4 Pro
-3. Gemini 3.5 Flash
-4. Cerebras Llama 3.3 70B
-5. Groq Llama 3.1 8B
-6. OpenRouter Llama 3.3 70B (`:free`)
-7. Gemini 3.5 Flash Lite
-8. OpenRouter DeepSeek V3 (`:free`)
-
-Each candidate has independent backoff:
-
-- **Rate-limited** (429 / quota) → honors the provider's retry hint.
-- **Unavailable** (bad model id, 400/401/403/404) → parked for ~12h.
-- **Transient errors** → cool down for ~2m.
-
-Curation **never silently degrades**. Every run records which provider served it — or that it fell back to deterministic **"rules"** — in the database. `GET /api/health` returns full provider status plus the last outcome, so the app can show `AI: DeepSeek V4 ✓` or `AI: degraded (rules)`.
+AI curation and chat use the selected local GGUF through llama-server. Light is
+Qwen3.5 0.8B Q4 and Balanced is Qwen3 1.7B Q8_0. First setup detects RAM,
+offers both profiles, downloads the model and pinned CPU runtime with progress
+and hash verification, and supports cancellation. If no model is ready,
+deterministic rules remain available; the app never switches to a cloud model.
 
 ## Settings window sections
 
@@ -107,7 +88,7 @@ The server binds **`127.0.0.1`** by default, so nothing else on your LAN can rea
 
 For **local development** only, running the server standalone reads a `.env` file — see [`.env.example`](../.env.example). The lookup order is `$AI_PULSE_ENV_FILE` ▸ `$AI_PULSE_RESOURCE_DIR/.env` ▸ `./.env` ▸ the repo root. The packaged app does **not** use `.env`; it injects config from `config.json` instead.
 
-> Running the desktop app **unpackaged from a source checkout** (`npm run app`) seeds the API keys from the repo-root `.env` into `config.json` **once**, on first run — it never overwrites keys you have already saved. Packaged builds ignore `.env` entirely.
+> Running the desktop app **unpackaged from a source checkout** (`npm run app`) may seed optional integration tokens from the repo-root `.env` into `config.json` **once**, on first run — it never overwrites saved settings. Packaged builds ignore `.env` entirely; local model setup is managed by the first-run flow.
 
 The server honors these environment variables:
 

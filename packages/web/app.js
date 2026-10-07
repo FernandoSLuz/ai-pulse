@@ -16,7 +16,53 @@ let state = {
   newsCategory: "all",
   sortKey: "intelligence",
   sortDir: "desc",
+  view: "overview",
+  social: { profiles: [], posts: [] },
+  pages: { news: 1, aipicks: 1, creators: 1, companies: 1, rankings: 1, social: 1 },
+  benchmarkQuery: "",
+  benchmarkAccess: "all",
+  videoKind: "creator",
 };
+
+const PAGE_SIZE = { news: 5, aipicks: 5, creators: 4, companies: 4, rankings: 10, social: 10 };
+
+function renderPager(id, key, total) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const size = PAGE_SIZE[key];
+  const pages = Math.max(1, Math.ceil(total / size));
+  state.pages[key] = Math.min(state.pages[key], pages);
+  if (pages <= 1) { el.innerHTML = ""; return; }
+  el.innerHTML = `<button type="button" class="btn btn-ghost btn-sm" data-page="prev" ${state.pages[key] === 1 ? "disabled" : ""}>Previous</button><span>Page ${state.pages[key]} of ${pages}</span><button type="button" class="btn btn-ghost btn-sm" data-page="next" ${state.pages[key] === pages ? "disabled" : ""}>Next</button>`;
+  el.querySelectorAll("[data-page]").forEach((button) => button.addEventListener("click", () => { state.pages[key] += button.dataset.page === "next" ? 1 : -1; ({ news: renderNews, aipicks: renderAiPicks, creators: renderCreators, companies: renderCompanyVideos, rankings: renderRankings, social: renderSocial }[key])(); }));
+}
+
+function pageItems(items, key) {
+  const size = PAGE_SIZE[key];
+  const start = (state.pages[key] - 1) * size;
+  return items.slice(start, start + size);
+}
+
+const VIEW_COPY = {
+  overview: ["Overview", "A calm read of what changed and what deserves your attention."],
+  news: ["News", "Signals and picks, with room to read what matters."],
+  videos: ["Videos", "Creators and official labs, separated for quick scanning."],
+  benchmarks: ["Benchmarks", "Compare the models that matter by intelligence, coding, speed, and access."],
+  social: ["X / Twitter", "Follow the people shaping AI and keep the useful posts close to your radar."],
+};
+
+function setView(view) {
+  if (!VIEW_COPY[view]) return;
+  state.view = view;
+  document.body.dataset.view = view;
+  document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === view));
+  const [title, description] = VIEW_COPY[view];
+  document.getElementById("view-title").textContent = title;
+  document.getElementById("view-description").textContent = description;
+  if (view === "overview" || view === "news") { renderNews(); renderAiPicks(); }
+  if (view === "videos") { renderCreators(); renderCompanyVideos(); }
+  if (view === "social") loadSocial().catch((err) => console.warn("Social feed unavailable", err));
+}
 
 const SORTABLE = {
   name: { key: "name", type: "string", defaultDir: "asc", label: "Model" },
@@ -24,7 +70,7 @@ const SORTABLE = {
   intelligence: { key: "intelligence", type: "number", defaultDir: "desc", label: "Intel" },
   coding: { key: "coding", type: "number", defaultDir: "desc", label: "Code" },
   math: { key: "math", type: "number", defaultDir: "desc", label: "Math" },
-  priceBlended: { key: "priceBlended", type: "number", defaultDir: "asc", label: "Price" },
+  priceBlended: { key: "priceBlended", type: "number", defaultDir: "asc", label: "$/1M in/out" },
   speed: { key: "speed", type: "number", defaultDir: "desc", label: "Speed" },
   accessibilityScore: { key: "accessibilityScore", type: "number", defaultDir: "desc", label: "Access" },
 };
@@ -46,8 +92,18 @@ function sortModels(models) {
       const vb = String(b[col.key] ?? "").toLowerCase();
       return state.sortDir === "asc" ? va.localeCompare(vb) : vb.localeCompare(va);
     }
-    const va = Number(a[col.key]) || 0;
-    const vb = Number(b[col.key]) || 0;
+    const ar = a[col.key];
+    const br = b[col.key];
+    const av = Number(ar);
+    const bv = Number(br);
+    const aMissing = ar == null || ar === "" || !Number.isFinite(av);
+    const bMissing = br == null || br === "" || !Number.isFinite(bv);
+    if (aMissing || bMissing) {
+      if (aMissing && bMissing) return 0;
+      return aMissing ? 1 : -1;
+    }
+    const va = av;
+    const vb = bv;
     return state.sortDir === "asc" ? va - vb : vb - va;
   });
 }
@@ -79,6 +135,7 @@ function onSortHeaderClick(key) {
 function connectWs() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   const ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onopen = () => { const el = document.getElementById("connection-status"); if (el) el.innerHTML = "<i></i> Live updates"; };
   ws.addEventListener("message", (ev) => {
     try {
       const msg = JSON.parse(ev.data);
@@ -135,7 +192,7 @@ function connectWs() {
     }
   };
 
-  ws.onclose = () => setTimeout(connectWs, 3000);
+  ws.onclose = () => { const el = document.getElementById("connection-status"); if (el) el.innerHTML = "<i></i> Cached data"; setTimeout(connectWs, 3000); };
 }
 
 async function fetchJson(path, opts = {}) {
@@ -188,7 +245,7 @@ function renderStackSummary() {
       const providers = normalizeProviders(e).join(", ");
       const model = state.rankings?.models?.find((m) => m.slug === resolveSlug(e.modelSlug));
       const intel = model ? fmtMetric(model.intelligence, 1) : "—";
-      const price = model ? `$${model.priceBlended.toFixed(2)}` : "—";
+      const price = model ? fmtPrice(model.priceBlended) : "—";
       return `<div class="stack-row">
         <div class="stack-row-role">${escapeHtml(ROLE_LABELS[e.role] || e.role)}</div>
         <div class="stack-row-body">
@@ -214,23 +271,16 @@ function renderRoleGapBanner() {
     return;
   }
   banner.classList.remove("hidden");
-  banner.innerHTML = gaps.map((g) => {
-    const setup =
-      g.role === "free"
-        ? `<p class="gap-setup">In Cursor: Settings → Models → Override OpenAI Base URL (e.g. <code>http://localhost:11434/v1</code> for Ollama) → Add Model → pick this name.</p>`
-        : "";
-    return `<div class="gap-card" data-role="${escapeHtml(g.role)}">
-      <div class="gap-card-main">
-        <div class="gap-label">Missing ${escapeHtml(ROLE_LABELS[g.role] || g.role)}</div>
-        <div class="gap-pick">Try <strong>${escapeHtml(g.modelName)}</strong></div>
-        ${setup}
-      </div>
-      <div class="gap-actions">
-        <button type="button" class="btn btn-accent" data-gap-add="${escapeHtml(g.role)}">Add to stack</button>
-        <button type="button" class="btn btn-ghost" data-gap-dismiss="${escapeHtml(g.role)}">Dismiss</button>
-      </div>
-    </div>`;
-  }).join("");
+  const labels = gaps.map((g) => ROLE_LABELS[g.role] || g.role).join(", ");
+  banner.innerHTML = `<div class="gap-card gap-summary">
+    <div class="gap-card-main">
+      <div class="gap-label">My Stack needs attention</div>
+      <div class="gap-pick">${gaps.length} role${gaps.length === 1 ? "" : "s"} to review: <strong>${escapeHtml(labels)}</strong></div>
+      <p class="gap-setup">Open My Stack to review the local model suggestions and choose what to add.</p>
+    </div>
+    <div class="gap-actions"><button type="button" class="btn btn-accent" id="open-stack-gaps">Open My Stack</button></div>
+  </div>`;
+  banner.querySelector("#open-stack-gaps")?.addEventListener("click", openDrawer);
 
   banner.querySelectorAll("[data-gap-add]").forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -256,7 +306,7 @@ function renderBriefing() {
   const el = document.getElementById("briefing");
   const b = state.briefing;
   if (!b) {
-    el.innerHTML = `<p class="muted">Loading analyst briefing… Configure DEEPSEEK_API_KEY in .env for AI-powered summaries (Gemini/Groq/Ollama optional).</p>`;
+    el.innerHTML = `<p class="muted">Loading your local analyst briefing…</p>`;
     renderRoleGapBanner();
     return;
   }
@@ -332,7 +382,7 @@ function renderBriefing() {
 
 function section(title, items) {
   if (!items?.length) return "";
-  return `<details open><summary>${title}</summary><ul>${items.map((i) => `<li>${escapeHtml(i)}</li>`).join("")}</ul></details>`;
+  return `<details><summary>${title}</summary><ul>${items.map((i) => `<li>${escapeHtml(i)}</li>`).join("")}</ul></details>`;
 }
 
 function escapeHtml(s) {
@@ -352,8 +402,25 @@ function stripHtml(text) {
 }
 
 function fmtMetric(value, decimals = 0) {
-  if (value == null || value === 0) return "—";
+  if (value == null || !Number.isFinite(Number(value)) || Number(value) <= 0) return "—";
   return decimals ? Number(value).toFixed(decimals) : Math.round(value);
+}
+
+function fmtPrice(value) {
+  if (value == null || !Number.isFinite(Number(value))) return "—";
+  return `$${Number(value).toFixed(2)}`;
+}
+
+function safeLink(value) {
+  try { const u = new URL(String(value || "")); return /^https?:$/.test(u.protocol) ? u.href : ""; } catch { return ""; }
+}
+
+function priceCell(model) {
+  const input = fmtPrice(model.priceInput);
+  const output = fmtPrice(model.priceOutput);
+  const blended = fmtPrice(model.priceBlended);
+  if (input === "—" && output === "—" && blended === "—") return `<span title="Pricing not published">—</span>`;
+  return `<span title="Blended price uses the Artificial Analysis 3:1 input/output mix. Source: ${escapeHtml(model.fetchedAt || "leaderboard")}">${input} / ${output}<small class="price-blended"> · ${blended} blend</small></span>`;
 }
 
 function renderNews() {
@@ -365,11 +432,12 @@ function renderNews() {
   const items = state.news ?? [];
 
   if (!items.length) {
+    document.getElementById("news-pager").innerHTML = "";
     feed.innerHTML = `<p class="muted">No news for this filter. Try Refresh news or a wider time range.</p>`;
     return;
   }
-
-  feed.innerHTML = items.slice(0, 40).map((n) => `
+  const visible = state.view === "overview" ? items.slice(0, 3) : pageItems(items, "news");
+  feed.innerHTML = visible.map((n) => `
     <article class="news-card">
       <div class="news-meta">
         <span class="source-tier tier-${n.tier ?? 3}">${escapeHtml(n.source)}</span>
@@ -380,6 +448,10 @@ function renderNews() {
       ${n.summary ? `<p class="muted news-summary">${escapeHtml(stripHtml(n.summary).slice(0, 120))}…</p>` : ""}
     </article>
   `).join("");
+  const pager = document.getElementById("news-pager");
+  if (state.view === "overview") pager.innerHTML = `<button type="button" class="btn btn-ghost btn-sm" data-open-view="news">View all news →</button>`;
+  else renderPager("news-pager", "news", items.length);
+  pager.querySelector("[data-open-view]")?.addEventListener("click", () => setView("news"));
 }
 
 function renderAiPicks() {
@@ -387,10 +459,12 @@ function renderAiPicks() {
   if (!feed) return;
   const items = state.aiPicks ?? [];
   if (!items.length) {
+    document.getElementById("aipick-pager").innerHTML = "";
     feed.innerHTML = `<p class="muted">No groundbreaking picks for this period yet.</p>`;
     return;
   }
-  feed.innerHTML = items.map((n) => `
+  const visible = state.view === "overview" ? items.slice(0, 3) : pageItems(items, "aipicks");
+  feed.innerHTML = visible.map((n) => `
     <article class="news-card aipick-card">
       <div class="news-meta">
         <span class="aipick-badge">AI Pick</span>
@@ -401,6 +475,10 @@ function renderAiPicks() {
       ${n.aiPickReason ? `<p class="aipick-reason">${escapeHtml(n.aiPickReason)}</p>` : ""}
     </article>
   `).join("");
+  const pager = document.getElementById("aipick-pager");
+  if (state.view === "overview") pager.innerHTML = `<button type="button" class="btn btn-ghost btn-sm" data-open-view="news">View all picks →</button>`;
+  else renderPager("aipick-pager", "aipicks", items.length);
+  pager.querySelector("[data-open-view]")?.addEventListener("click", () => setView("news"));
 }
 
 function renderCreators() {
@@ -412,10 +490,11 @@ function renderCreators() {
   }
   const items = state.videos ?? [];
   if (!items.length) {
+    document.getElementById("creators-pager").innerHTML = "";
     feed.innerHTML = `<p class="muted">No creator uploads yet. YouTube channels poll every 30 minutes.</p>`;
     return;
   }
-  feed.innerHTML = items.slice(0, 30).map((v) => `
+  feed.innerHTML = pageItems(items, "creators").map((v) => `
     <a class="creator-card" href="${escapeHtml(v.link)}" target="_blank" rel="noopener">
       <img class="creator-thumb" src="${escapeHtml(v.thumbnail)}" alt="" loading="lazy" width="120" height="68" />
       <div class="creator-body">
@@ -425,6 +504,7 @@ function renderCreators() {
       </div>
     </a>
   `).join("");
+  renderPager("creators-pager", "creators", items.length);
 }
 
 function renderCompanyVideos() {
@@ -436,10 +516,11 @@ function renderCompanyVideos() {
   }
   const items = state.companyVideos ?? [];
   if (!items.length) {
+    document.getElementById("companies-pager").innerHTML = "";
     feed.innerHTML = `<p class="muted">No company uploads yet. YouTube channels poll every 30 minutes.</p>`;
     return;
   }
-  feed.innerHTML = items.slice(0, 30).map((v) => `
+  feed.innerHTML = pageItems(items, "companies").map((v) => `
     <a class="creator-card" href="${escapeHtml(v.link)}" target="_blank" rel="noopener">
       <img class="creator-thumb" src="${escapeHtml(v.thumbnail)}" alt="" loading="lazy" width="120" height="68" />
       <div class="creator-body">
@@ -449,6 +530,7 @@ function renderCompanyVideos() {
       </div>
     </a>
   `).join("");
+  renderPager("companies-pager", "companies", items.length);
 }
 
 async function loadNews(period = state.newsPeriod, category = state.newsCategory) {
@@ -494,7 +576,7 @@ function winnerBadges(slug, winners) {
   if (winners.math === slug) badges.push('<span class="badge">Math</span>');
   if (winners.price === slug) badges.push('<span class="badge">Price</span>');
   if (winners.speed === slug) badges.push('<span class="badge">Speed</span>');
-  if (winners.accessibility === slug) badges.push('<span class="badge">Open</span>');
+  if (winners.accessibility === slug) badges.push('<span class="badge">Access</span>');
   return badges.join("");
 }
 
@@ -503,6 +585,7 @@ function renderRankings() {
   const tbody = document.querySelector("#rankings-table tbody");
   const updated = document.getElementById("rankings-updated");
   if (!r?.models?.length) {
+    document.getElementById("rankings-pager").innerHTML = "";
     tbody.innerHTML = `<tr><td colspan="10" class="muted">Loading benchmarks…</td></tr>`;
     return;
   }
@@ -512,9 +595,16 @@ function renderRankings() {
     : `Updated ${timeAgo(r.updatedAt)}`;
   updated.classList.toggle("stale-warning", Boolean(r.health?.stale));
   const mine = resolveSlug(state.stack?.primaryModelSlug);
-  const sorted = sortModels(r.models);
+  const query = state.benchmarkQuery.trim().toLowerCase();
+  const filtered = r.models.filter((m) => {
+    const matchesQuery = !query || `${m.name} ${m.displayName || ""} ${m.creator}`.toLowerCase().includes(query);
+    const matchesAccess = state.benchmarkAccess !== "open" || /open weights|open source/i.test(String(m.accessibility || ""));
+    return matchesQuery && matchesAccess;
+  });
+  const sorted = sortModels(filtered);
 
-  tbody.innerHTML = sorted.slice(0, 30).map((m, i) => {
+  const pageStart = (state.pages.rankings - 1) * PAGE_SIZE.rankings;
+  tbody.innerHTML = sorted.slice(pageStart, pageStart + PAGE_SIZE.rankings).map((m, i) => {
     const cls = [
       i === 0 ? "row-gold" : "",
       m.slug === mine ? "row-mine" : "",
@@ -522,18 +612,19 @@ function renderRankings() {
     const shownName = m.displayName ?? m.name;
     const hover = variantHoverTitle(m);
     return `<tr class="${cls}">
-      <td>${i + 1}</td>
-      <td class="${state.sortKey === "name" ? "col-sort-active" : ""}" ${hover ? `title="${escapeHtml(hover)}"` : ""}>${escapeHtml(shownName)}</td>
+      <td>${pageStart + i + 1}</td>
+      <td class="${state.sortKey === "name" ? "col-sort-active" : ""}" ${hover ? `title="${escapeHtml(hover)}"` : ""}>${safeLink(m.url) ? `<a href="${escapeHtml(safeLink(m.url))}" target="_blank" rel="noopener">${escapeHtml(shownName)}</a>` : escapeHtml(shownName)}</td>
       <td class="${state.sortKey === "creator" ? "col-sort-active" : ""}">${escapeHtml(m.creator)}</td>
       <td class="${state.sortKey === "intelligence" ? "col-sort-active" : ""}">${fmtMetric(m.intelligence, 1)}</td>
       <td class="${state.sortKey === "coding" ? "col-sort-active" : ""}">${fmtMetric(m.coding, 1)}</td>
       <td class="${state.sortKey === "math" ? "col-sort-active" : ""}">${fmtMetric(m.math, 1)}</td>
-      <td class="${state.sortKey === "priceBlended" ? "col-sort-active" : ""}">$${m.priceBlended.toFixed(2)}</td>
+      <td class="${state.sortKey === "priceBlended" ? "col-sort-active" : ""}">${priceCell(m)}</td>
       <td class="${state.sortKey === "speed" ? "col-sort-active" : ""}">${fmtMetric(m.speed)}</td>
-      <td class="${state.sortKey === "accessibilityScore" ? "col-sort-active" : ""}">${escapeHtml(m.accessibility)}</td>
+      <td class="${state.sortKey === "accessibilityScore" ? "col-sort-active" : ""}"><span>${escapeHtml(m.accessibility || "Unknown")}</span>${m.licenseUrl && safeLink(m.licenseUrl) ? ` · <a href="${escapeHtml(safeLink(m.licenseUrl))}" target="_blank" rel="noopener">license</a>` : ""}${m.weightsUrl && safeLink(m.weightsUrl) ? ` · <a href="${escapeHtml(safeLink(m.weightsUrl))}" target="_blank" rel="noopener">weights</a>` : ""}</td>
       <td>${winnerBadges(m.slug, r.winners)}</td>
     </tr>`;
   }).join("");
+  renderPager("rankings-pager", "rankings", sorted.length);
 }
 
 function renderStackChip() {
@@ -968,6 +1059,25 @@ document.getElementById("refresh-news")?.addEventListener("click", async () => {
   }
 });
 
+async function refreshResource(buttonId, endpoint, loaders) {
+  const btn = document.getElementById(buttonId);
+  if (!btn) return;
+  const previous = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Refreshing…";
+  try { await fetchJson(endpoint, { method: "POST", timeoutMs: 90_000 }); }
+  catch (err) { console.warn(`Refresh failed: ${endpoint}`, err); }
+  await Promise.allSettled(loaders.map((loader) => loader()));
+  btn.disabled = false;
+  btn.textContent = previous;
+}
+
+document.getElementById("refresh-rankings")?.addEventListener("click", () => refreshResource("refresh-rankings", "/api/rankings/refresh", [async () => { state.rankings = await fetchJson("/api/rankings"); renderRankings(); }]));
+document.getElementById("refresh-videos")?.addEventListener("click", () => refreshResource("refresh-videos", "/api/videos/refresh", [loadVideos, loadCompanyVideos]));
+document.getElementById("benchmark-search")?.addEventListener("input", (event) => { state.benchmarkQuery = event.target.value; state.pages.rankings = 1; renderRankings(); });
+document.querySelectorAll("[data-access-filter]").forEach((button) => button.addEventListener("click", () => { document.querySelectorAll("[data-access-filter]").forEach((b) => b.classList.remove("active")); button.classList.add("active"); state.benchmarkAccess = button.dataset.accessFilter; state.pages.rankings = 1; renderRankings(); }));
+document.querySelectorAll("[data-video-kind]").forEach((button) => button.addEventListener("click", () => { document.querySelectorAll("[data-video-kind]").forEach((b) => b.classList.remove("active")); button.classList.add("active"); state.videoKind = button.dataset.videoKind; document.querySelector(".creators-panel")?.classList.toggle("hidden", state.videoKind !== "creator"); document.querySelector(".companies-panel")?.classList.toggle("hidden", state.videoKind !== "company"); document.querySelector(".companies-panel")?.classList.toggle("show-company", state.videoKind === "company"); }));
+
 document.getElementById("stack-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const entries = collectEntriesFromDom().filter((row) => row.modelSlug);
@@ -1027,9 +1137,8 @@ function escapeChatHtml(str) {
 }
 
 function searchStatusLabel() {
-  if (chatState.searchBackend === "tavily") return "Web search: on (Tavily)";
-  if (chatState.searchBackend === "gemini") return "Web search: on (Gemini)";
-  return "Web search: off — add TAVILY_API_KEY or GEMINI_API_KEY";
+  if (chatState.searchBackend && chatState.searchBackend !== "none") return `Search: on (${chatState.searchBackend})`;
+  return "Local model · search unavailable";
 }
 
 function renderChatSearchStatus() {
@@ -1044,7 +1153,7 @@ function populateChatModels() {
   if (!chatState.models.length) {
     const opt = document.createElement("option");
     opt.value = "";
-    opt.textContent = "No models — set API keys in .env";
+    opt.textContent = "No local model configured — open Settings";
     select.appendChild(opt);
     select.disabled = true;
     return;
@@ -1148,7 +1257,7 @@ async function sendChatMessage(text) {
   if (!modelId) {
     chatState.messages.push({
       role: "error",
-      content: "Configure GROQ_API_KEY and/or GEMINI_API_KEY in .env, then restart the server.",
+      content: "Configure a local model in AI Pulse Settings, then try again.",
     });
     renderChatMessages();
     return;
@@ -1220,6 +1329,101 @@ document.getElementById("chat-input")?.addEventListener("keydown", (e) => {
     document.getElementById("chat-form").requestSubmit();
   }
 });
+
+/* —— X / social radar —— */
+function safeExternalUrl(value) {
+  try {
+    const url = new URL(String(value || ""), location.origin);
+    return /^https?:$/.test(url.protocol) ? url.href : "#";
+  } catch { return "#"; }
+}
+
+function renderSocial() {
+  const profilesEl = document.getElementById("social-profiles");
+  const feed = document.getElementById("social-feed");
+  if (!profilesEl || !feed) return;
+  const profiles = state.social.profiles || [];
+  profilesEl.innerHTML = profiles.length
+    ? profiles.map((p) => `<span class="profile-pill-wrap"><a class="profile-pill" href="${escapeHtml(safeExternalUrl(p.profileUrl || `https://x.com/${p.handle}`))}" target="_blank" rel="noopener">𝕏 ${escapeHtml(p.name || p.handle)}</a>${p.source === "user" ? `<button type="button" class="profile-remove" data-remove-profile="${escapeHtml(p.handle)}" aria-label="Unfollow @${escapeHtml(p.handle)}">×</button>` : ""}</span>`).join("")
+    : `<span class="muted">No profiles added yet</span>`;
+  profilesEl.querySelectorAll("[data-remove-profile]").forEach((btn) => btn.addEventListener("click", () => removeSocialProfile(btn.dataset.removeProfile)));
+  const status = document.getElementById("social-status");
+  if (status) {
+    status.textContent = state.social.configured === false
+      ? "X access is not configured. Add an X API token in AI Pulse Settings to load posts."
+      : state.social.error || (state.social.updatedAt ? `Updated ${timeAgo(state.social.updatedAt)}` : "");
+  }
+  const posts = state.social.posts || [];
+  if (!posts.length) {
+    feed.innerHTML = `<div class="empty-state"><span class="empty-mark">𝕏</span><strong>${state.social.error ? "X feed unavailable" : "Your social radar is ready"}</strong><p class="muted">${state.social.configured === false ? "Connect X in AI Pulse Settings, then refresh this view." : "Follow a profile to bring public AI posts into your radar."}</p><button type="button" class="btn btn-ghost" id="empty-add-social">Add a profile</button></div>`;
+    document.getElementById("empty-add-social")?.addEventListener("click", showSocialForm);
+    return;
+  }
+  feed.innerHTML = pageItems(posts, "social").map((p) => {
+    const link = safeExternalUrl(p.url);
+    return `<article class="social-card"><div class="social-avatar">${escapeHtml((p.authorName || p.authorHandle || "X").slice(0, 1).toUpperCase())}</div><div class="social-body"><div class="social-meta"><strong>${escapeHtml(p.authorName || "Unknown")}</strong><span>@${escapeHtml(p.authorHandle || "")}</span><span>${p.createdAt ? timeAgo(p.createdAt) : ""}</span></div><p>${escapeHtml(stripHtml(p.text || ""))}</p><a href="${escapeHtml(link)}" target="_blank" rel="noopener">Open on X ↗</a></div></article>`;
+  }).join("");
+  renderPager("social-pager", "social", posts.length);
+}
+
+async function loadSocial() {
+  try {
+    const data = await fetchJson("/api/social?limit=40");
+    state.social.posts = data.items || [];
+    state.social.profiles = data.profiles || [];
+    state.social.configured = data.configured;
+    state.social.updatedAt = data.updatedAt || data.lastAttemptAt || null;
+    state.social.error = data.error || null;
+  } catch (err) {
+    state.social.posts = [];
+    state.social.error = "Could not load the X feed right now.";
+  }
+  renderSocial();
+}
+
+function showSocialForm() {
+  const form = document.getElementById("social-profile-form");
+  form?.classList.remove("hidden");
+  document.getElementById("social-handle")?.focus();
+}
+
+function hideSocialForm() {
+  document.getElementById("social-profile-form")?.classList.add("hidden");
+  document.getElementById("social-form-error").textContent = "";
+}
+
+async function addSocialProfile(handle) {
+  const normalized = handle.trim().replace(/^@+/, "");
+  if (!/^[A-Za-z0-9_]{1,15}$/.test(normalized)) throw new Error("Use a valid @handle with up to 15 characters.");
+  try {
+    await fetchJson("/api/social/profiles", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ handle: normalized }) });
+  } catch (err) { throw new Error("Could not add that profile."); }
+  await loadSocial();
+}
+
+async function removeSocialProfile(handle) {
+  try { await fetchJson(`/api/social/profiles/${encodeURIComponent(handle)}`, { method: "DELETE" }); await loadSocial(); }
+  catch { state.social.error = "Could not remove that profile."; renderSocial(); }
+}
+
+document.querySelectorAll(".nav-item").forEach((item) => item.addEventListener("click", () => setView(item.dataset.view)));
+document.getElementById("sidebar-stack")?.addEventListener("click", promptOpenApp);
+document.getElementById("sidebar-chat")?.addEventListener("click", () => setChatOpen(true));
+document.getElementById("add-social-profile")?.addEventListener("click", showSocialForm);
+document.getElementById("cancel-social-profile")?.addEventListener("click", hideSocialForm);
+document.getElementById("social-profile-form")?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const input = document.getElementById("social-handle");
+  const error = document.getElementById("social-form-error");
+  try { await addSocialProfile(input.value); input.value = ""; hideSocialForm(); }
+  catch (err) { error.textContent = err.message; }
+});
+document.getElementById("refresh-social")?.addEventListener("click", async () => {
+  const btn = document.getElementById("refresh-social"); btn.disabled = true; btn.textContent = "Refreshing…";
+  try { await fetchJson("/api/social/refresh", { method: "POST", timeoutMs: 90_000 }); } catch { /* cached state is still rendered */ }
+  await loadSocial(); btn.disabled = false; btn.textContent = "Refresh";
+});
+setView("overview");
 
 async function init() {
   connectWs();

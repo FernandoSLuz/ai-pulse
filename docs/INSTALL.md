@@ -1,6 +1,6 @@
 # Installing AI Pulse
 
-AI Pulse is a local AI model radar for Windows and Linux (Omarchy/Hyprland). This guide walks you through downloading the right build, installing it, adding your first provider key, and managing the app afterward.
+AI Pulse is a local AI model radar for Windows, macOS, and Linux (Omarchy/Hyprland). This guide walks you through downloading the right build, installing it, configuring local AI, and managing the app afterward.
 
 ## 1. Download
 
@@ -10,12 +10,30 @@ AI Pulse is a local AI model radar for Windows and Linux (Omarchy/Hyprland). Thi
 | OS | Asset | Notes |
 | --- | --- | --- |
 | Windows | `AI Pulse-Setup-<version>.exe` | NSIS installer, per-user. |
-| Linux (any distro) | `ai-pulse-<version>.AppImage` | Portable; supports in-app updates. |
+| macOS (Intel) | `AI Pulse-<version>-x64.dmg` | DMG installer for Intel Macs. |
+| macOS (Apple Silicon) | `AI Pulse-<version>-arm64.dmg` | DMG installer for Apple Silicon Macs. |
+| Linux x64 (portable) | `ai-pulse-<version>.AppImage` | Portable; supports in-app updates on systems with FUSE 2. |
+| Linux (Debian/Ubuntu) | `ai-pulse-<version>.deb` | Native x64 package. |
+| Linux (Fedora/RHEL) | `ai-pulse-<version>.rpm` | Native x64 package. |
 | Linux (Arch / Omarchy) | `ai-pulse-<version>.pacman` | Native package. **Final releases only.** |
 
-> **Note:** Release-candidate and prerelease builds (tags like `v1.0.0-rc.1`) are published on the same Releases page, marked as prereleases. Pick a full release unless you specifically want to test an RC. RCs ship the `.exe` and the `.AppImage` but **no `.pacman`**: pacman turns `1.2.0-rc.1` into `1.2.0_rc.1`, which `vercmp` sorts *above* `1.2.0`, so an installed RC package would block the upgrade to the final release.
+> **Note:** Release-candidate and prerelease builds (tags like `v1.0.0-rc.1`) are published on the same Releases page, marked as prereleases. Pick a full release unless you specifically want to test an RC. RCs include Windows, macOS, and Linux x64 AppImage/deb/rpm assets but **no `.pacman`**: pacman turns `1.2.0-rc.1` into `1.2.0_rc.1`, which `vercmp` sorts *above* `1.2.0`, so an installed RC package would block the upgrade to the final release.
 
 All builds are **unsigned** — on Windows expect a SmartScreen warning; the Linux packages carry no signature either.
+
+macOS builds are also unsigned and may require **Open Anyway** in System Settings → Privacy & Security after the first launch.
+
+### Supported release lanes
+
+The release pipeline tests Windows x64, macOS Intel (x64), macOS Apple Silicon
+(arm64), and Linux x64. Linux arm64 and Windows arm64 builds are not published.
+The bundled CPU runtime is selected for the matching x64 or arm64 lane; it does
+not require a GPU. Compatibility with every historical OS version is not
+claimed. Electron 43 and the native llama.cpp release assets have their own
+platform and system-library requirements, so use a current supported OS and
+the package format intended for that distribution. If an older system reports
+an unsupported binary or missing library, use a newer OS or build a compatible
+runtime for that machine.
 
 ## 2. Install
 
@@ -34,7 +52,16 @@ The installer is unsigned, so SmartScreen may show a "Windows protected your PC"
 1. Click **More info**.
 2. Click **Run anyway**.
 
-### Linux — AppImage (any distro)
+### macOS
+
+Open the DMG matching your Mac (`x64` for Intel or `arm64` for Apple Silicon),
+then drag **AI Pulse** to Applications. macOS releases are updated by downloading
+the next matching architecture build. The first launch may be blocked because
+the build is unsigned; open **System Settings → Privacy & Security** and choose
+**Open Anyway**. AI Pulse uses the standard macOS login-item API and stores its
+data under the Electron user data directory.
+
+### Linux — AppImage (Linux x64)
 
 ```bash
 chmod +x ai-pulse-<version>.AppImage
@@ -43,6 +70,18 @@ chmod +x ai-pulse-<version>.AppImage
 
 - Needs **FUSE 2** to mount itself: `sudo pacman -S fuse2` on Arch/Omarchy (already present on most Omarchy installs).
 - Keep the file wherever you like. The **in-app updater** works for AppImage builds (via `latest-linux.yml`).
+
+### Linux — Debian/Ubuntu (`.deb`)
+
+```bash
+sudo apt install ./ai-pulse-<version>.deb
+```
+
+### Linux — Fedora/RHEL (`.rpm`)
+
+```bash
+sudo dnf install ./ai-pulse-<version>.rpm
+```
 
 ### Linux — pacman package (Arch / Omarchy)
 
@@ -63,23 +102,23 @@ On every start the app (either packaging) writes a few files into your home so t
 | `~/.local/share/icons/hicolor/256x256/apps/ai-pulse.png` | App icon. |
 | `~/.config/autostart/ai-pulse.desktop` | Only while **Start on login** is on (XDG autostart; Omarchy's uwsm session runs it via `xdg-desktop-autostart.target`). Turning the toggle off deletes it. |
 
-Your data and settings live in `~/.config/AI Pulse/` (`config.json`, `data/ai-pulse.db`, `logs/`) — the Linux counterpart of `%APPDATA%\AI Pulse\` on Windows.
+Your data and settings live in `~/.config/AI Pulse/` (`config.json`, `data/ai-pulse.db`, `logs/`) — the Linux counterpart of `%APPDATA%\AI Pulse\` on Windows and `~/Library/Application Support/AI Pulse/` on macOS.
 
-## 3. First run — add a provider key
+## 3. First run — configure local AI
 
-On first launch, AI Pulse opens the **Settings** window. Under the **Connections** section, add **at least one** AI provider key so curation works.
+On first launch, AI Pulse opens the **Settings** window and detects available RAM.
+Choose the recommended **Light** or **Balanced** profile. Light downloads
+**Qwen3.5 0.8B Q4** (about 537 MiB); Balanced downloads **Qwen3 1.7B Q8_0**
+(about 1.7 GiB). The app also downloads the pinned llama.cpp CPU runtime,
+verifies every catalogue hash, and shows progress; you can cancel and resume
+later. If no model is ready, deterministic rules keep rankings and briefings
+usable. No cloud model is contacted.
 
-We recommend starting with **DeepSeek** (V4.1 Flash is tried first). Adding more providers makes AI curation more resilient. Benchmark rankings need no key at all.
+No AI provider key is required. In **Connections**, optionally configure:
 
-| Provider | Where to get a key |
-| --- | --- |
-| DeepSeek (recommended) | https://platform.deepseek.com/api_keys |
-| Gemini | https://aistudio.google.com/apikey |
-| Cerebras | https://cloud.cerebras.ai |
-| Groq | https://console.groq.com/keys |
-| OpenRouter | https://openrouter.ai/keys |
-
-> You only need one key to get started. Keys are stored with the app and injected into the background service for you — there is no `.env` file to edit.
+- `AA_API_KEY` for benchmark enrichment (public rankings work without it);
+- `TAVILY_API_KEY` for web search only;
+- `X_API_BEARER_TOKEN` for official X posts. Without it, people profiles remain links.
 
 ## 4. Running in the tray & auto-start
 
@@ -150,4 +189,4 @@ Once installed, the dashboard and the leaderboard follow your active Omarchy the
 
 4. If you ran `npm run linux:install`, revert it with `npm run linux:uninstall -w @ai-pulse/widget` from the same checkout.
 
-Your data and keys (`~/.config/AI Pulse/` on Linux, `%APPDATA%\AI Pulse\` on Windows) are never deleted by an uninstall — remove that directory yourself if you want a clean slate.
+Your data and keys (`~/.config/AI Pulse/` on Linux, `%APPDATA%\AI Pulse\` on Windows, or `~/Library/Application Support/AI Pulse/` on macOS) are never deleted by an uninstall — remove that directory yourself if you want a clean slate.

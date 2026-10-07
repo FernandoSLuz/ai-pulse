@@ -18,12 +18,12 @@ export function computeWinners(models: ModelRecord[]): CategoryWinners {
   // A category with no data must not crown whoever happens to sort first (AA's
   // public leaderboard stopped publishing the coding/math composites, so those
   // columns are legitimately empty until a keyed AA_API_KEY enriches them).
-  const topBy = (score: (m: ModelRecord) => number, dir: "desc" | "asc" = "desc"): string => {
+  const topBy = (score: (m: ModelRecord) => number | null, dir: "desc" | "asc" = "desc", allowZero = false): string => {
     let best: ModelRecord | null = null;
     for (const m of models) {
       const value = score(m);
-      if (value <= 0) continue;
-      if (!best || (dir === "desc" ? value > score(best) : value < score(best))) best = m;
+      if (value === null || !Number.isFinite(value) || value < 0 || (value === 0 && !allowZero)) continue;
+      if (!best || (dir === "desc" ? value > score(best)! : value < score(best)!)) best = m;
     }
     return best?.slug ?? "";
   };
@@ -32,7 +32,7 @@ export function computeWinners(models: ModelRecord[]): CategoryWinners {
     overall: topBy((m) => m.intelligence),
     coding: topBy((m) => m.coding),
     math: topBy((m) => m.math),
-    price: topBy((m) => m.priceBlended, "asc"),
+    price: topBy((m) => m.priceBlended, "asc", true),
     speed: topBy((m) => m.speed),
     accessibility: topBy((m) => m.accessibilityScore),
   };
@@ -46,7 +46,7 @@ export function buildRankingsSnapshot(
   const collapsed = collapseVariants(sorted);
   const visible = collapsed.models;
   const health = evaluatePollHealth(configuredPollMs);
-  const updatedAt = getLastPollAt() ?? new Date().toISOString();
+  const updatedAt = getLastPollAt();
   return {
     models: withModelLinks(visible),
     winners: computeWinners(visible),

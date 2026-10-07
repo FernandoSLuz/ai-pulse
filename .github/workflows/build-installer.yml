@@ -1,7 +1,7 @@
 name: Build Installer (debug)
 
-# On-demand packaging build for iterating on the installers without cutting
-# releases. Produces the NSIS .exe on Windows and AppImage + pacman on Linux.
+# On-demand packaging build for iterating on installers without cutting a
+# release. This workflow never publishes a GitHub Release.
 on:
   workflow_dispatch:
 
@@ -10,7 +10,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        include:
+          - os: windows-latest
+            platform: win
+            arch: x64
+          - os: macos-15-intel
+            platform: mac
+            arch: x64
+          - os: macos-15
+            platform: mac
+            arch: arm64
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -21,7 +33,7 @@ jobs:
 
       - name: Install packaging tools (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libarchive-tools
+        run: sudo apt-get update && sudo apt-get install -y libarchive-tools rpm
 
       - name: Install
         run: npm ci
@@ -34,20 +46,27 @@ jobs:
         run: |
           npm run build -w @ai-pulse/widget
           cd packages/widget
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            npx electron-builder --win --publish never
+          if [ "${{ matrix.platform }}" = "win" ]; then
+            npx electron-builder --win nsis --${{ matrix.arch }} --publish never
+          elif [ "${{ matrix.platform }}" = "mac" ]; then
+            npx electron-builder --mac dmg zip --${{ matrix.arch }} --publish never
           else
-            npx electron-builder --linux AppImage pacman --publish never
+            npx electron-builder --linux AppImage deb rpm pacman --${{ matrix.arch }} --publish never
           fi
           ls -la release
 
       - name: Upload installers
         uses: actions/upload-artifact@v4
         with:
-          name: ai-pulse-${{ matrix.os }}
+          name: ai-pulse-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
             packages/widget/release/*.exe
             packages/widget/release/*.AppImage
+            packages/widget/release/*.dmg
+            packages/widget/release/*.zip
+            packages/widget/release/*.deb
+            packages/widget/release/*.rpm
             packages/widget/release/*.pacman
-            packages/widget/release/latest*.yml
+            packages/widget/release/latest-linux.yml
+            packages/widget/release/latest.yml
           if-no-files-found: error

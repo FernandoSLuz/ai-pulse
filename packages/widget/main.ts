@@ -7,6 +7,7 @@ import {
   saveConfig,
   redactedKeys,
   LLM_KEY_NAMES,
+  BAR_PANEL_AVAILABLE,
   type AppConfig,
   type LlmKeyName,
 } from "./src/config";
@@ -198,8 +199,8 @@ function createSettingsWindow(): void {
     return;
   }
   settingsWindow = new BrowserWindow({
-    width: 860,
-    height: 720,
+    width: 1000,
+    height: 790,
     minWidth: 640,
     minHeight: 520,
     title: "AI Pulse",
@@ -400,6 +401,7 @@ function settingsState() {
       port: config.port,
       autoLaunch: config.autoLaunch,
       startHidden: config.startHidden,
+      setupComplete: config.setupComplete,
       leaderboard: config.leaderboard,
       keys: redactedKeys(config), // booleans only — never expose raw secrets
     },
@@ -409,7 +411,7 @@ function settingsState() {
     platform: process.platform,
     logPath: serverLogPath(),
     alwaysOnTopSupported: !isLinux,
-    barPanelAvailable: isLinux,
+    barPanelAvailable: BAR_PANEL_AVAILABLE,
     monitors: knownMonitors,
     autostartPath: isLinux ? autostartHint() : null,
   };
@@ -455,10 +457,11 @@ function registerIpc(): void {
 
   ipcMain.handle("settings:setPrefs", (_e, prefs: Partial<AppConfig>) => {
     const prevPort = config.port;
-    if (typeof prefs.port === "number" && prefs.port >= 1 && prefs.port <= 65535) config.port = prefs.port;
+    if (Number.isInteger(prefs.port) && typeof prefs.port === "number" && prefs.port >= 1024 && prefs.port <= 65535) config.port = prefs.port;
     const portChanged = config.port !== prevPort; // only flag an actually-applied change
     const hiddenChanged = typeof prefs.startHidden === "boolean" && prefs.startHidden !== config.startHidden;
     if (typeof prefs.startHidden === "boolean") config.startHidden = prefs.startHidden;
+    if (typeof prefs.setupComplete === "boolean") config.setupComplete = prefs.setupComplete;
     const prevMonitor = config.leaderboard.monitor;
     if (prefs.leaderboard) {
       const next = { ...config.leaderboard, ...prefs.leaderboard };
@@ -534,7 +537,7 @@ function registerIpc(): void {
   // Guarded proxy to the local server API so the settings renderer can read/write
   // preferences (stack, notifications, models) without cross-origin fetches.
   const apiUrl = (p: string) => `http://127.0.0.1:${config.port}${p}`;
-  const allowed = (p: string) => typeof p === "string" && p.startsWith("/api/");
+  const allowed = (p: string) => typeof p === "string" && /^\/api\/[a-z0-9/?=&_.%-]+$/i.test(p) && !p.includes("..");
 
   ipcMain.handle("api:get", async (_e, p: string) => {
     if (!allowed(p)) return { error: "forbidden" };
@@ -559,6 +562,17 @@ function registerIpc(): void {
     } catch (err) {
       return { error: (err as Error).message };
     }
+  });
+
+  ipcMain.handle("api:post", async (_e, p: string, body: unknown) => {
+    if (!allowed(p)) return { error: "forbidden" };
+    try {
+      const res = await fetch(apiUrl(p), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body ?? {}), signal: AbortSignal.timeout(8000),
+      });
+      return await res.json();
+    } catch (err) { return { error: (err as Error).message }; }
   });
 
   // Leaderboard renderer (unchanged contract).
@@ -655,9 +669,11 @@ if (!gotLock) {
     // (on Linux this also refreshes the autostart entry's launcher path).
     applyAutoLaunch(config);
 
-    if (!launchedHidden) createSettingsWindow();
+    if (!launchedHidden || !config.setupComplete) createSettingsWindow();
     handleProtocolArgv(process.argv); // cold-start deep link
   });
+
+  app.on("activate", () => createSettingsWindow());
 
   app.on("window-all-closed", () => {
     // Intentionally do nothing — the app lives in the tray until "Quit AI Pulse".

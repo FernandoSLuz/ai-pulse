@@ -38,13 +38,15 @@ const INITIAL_DELAY_MS = 12_000;
 
 /**
  * electron-updater can only replace what it installed: NSIS on Windows and
- * AppImages on Linux (APPIMAGE is set by the AppImage runtime). A pacman
- * install or a source checkout gets the "unsupported" state instead.
+ * AppImages on Linux (APPIMAGE is set by the AppImage runtime). macOS builds
+ * are currently distributed as two architecture-specific archives; without a
+ * combined feed, offering one feed would make updates unsafe across Intel and
+ * Apple Silicon, so macOS remains a manual download until that feed exists.
  */
 export function updatesSupported(): boolean {
   if (!app.isPackaged) return false;
   if (process.platform === "linux") return Boolean(process.env.APPIMAGE);
-  return true;
+  return process.platform === "win32";
 }
 
 function createLogger() {

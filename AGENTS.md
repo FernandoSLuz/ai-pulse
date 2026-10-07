@@ -4,7 +4,7 @@ Monorepo npm workspaces: `packages/server` (Node+TS+Express+better-sqlite3+ws),
 `packages/web` (HTML/CSS/JS vanilla, sem build), `packages/widget` (Electron; integração
 Linux em `src/platform.ts`, regra Hyprland + hook de tema em `linux/`),
 `packages/omarchy-plugin/fernando.ai-pulse` (widget da barra do omarchy-shell, QML + manifest).
-Roda em Windows (NSIS) e Linux (AppImage + pacman; Omarchy/Hyprland é o desktop de referência).
+Roda em Windows (NSIS), macOS (DMG/ZIP) e Linux (AppImage/deb/rpm/pacman; Omarchy/Hyprland é o desktop de referência).
 Fonte única: `README.md` + `docs/ARCHITECTURE.md` + `docs/CONFIGURATION.md` +
 `docs/RELEASING.md`. Leia antes de agir.
 
@@ -18,7 +18,7 @@ Fonte única: `README.md` + `docs/ARCHITECTURE.md` + `docs/CONFIGURATION.md` +
   `node --check packages/widget/renderer/settings.js`.
 - Gate local = o que o CI faz: `npm run gate` + `GET /api/health` 200.
 - `npm run dist -w @ai-pulse/widget` (NSIS, Windows) · `npm run dist:linux -w @ai-pulse/widget`
-  (AppImage + pacman; `dist:linux:dir` = pasta sem empacotar) · `npm run linux:install`
+  (AppImage + deb + rpm + pacman; `dist:linux:dir` = pasta sem empacotar) · `npm run linux:install`
   (Omarchy: regra Hyprland, hook de tema, plugin da barra; `npm run linux:uninstall -w @ai-pulse/widget` desfaz).
 - Não há lint nem testes. Não invente framework de teste sem pedido.
 
@@ -34,10 +34,10 @@ Fonte única: `README.md` + `docs/ARCHITECTURE.md` + `docs/CONFIGURATION.md` +
   é enriquecimento opcional (índices compostos de coding/math) e NUNCA pode gerar linhas
   sintéticas/demo. Com feed completo (≥100 modelos) o poll poda linhas ausentes: o banco espelha
   o feed em vez de acumular modelos aposentados.
-- Curadoria de IA: `deepseek-flash` (V4.1 Flash) é o primeiro candidato do router
-  (`deepseek-v4-pro` depois); Gemini/Cerebras/Groq/OpenRouter são spillover. Chave
-  `DEEPSEEK_API_KEY` (`.env` em dev, `config.json` no app); os modelos de raciocínio pedem
-  timeout maior que o padrão de 45s.
+- Curadoria e chat rodam no GGUF local por llama-server. O primeiro setup detecta RAM e baixa
+  o perfil Light/Balanced com hash verificável e cancelamento; sem modelo pronto, usa regras.
+  O catálogo de modelos é a fonte dos URLs/hashes. `AA_API_KEY`, `TAVILY_API_KEY` e
+  `X_API_BEARER_TOKEN` são opcionais para dados/enriquecimento/busca/posts; nenhum é fallback de modelo.
 - `GET /api/videos` sem `kind` = `kind=creator` — contrato do `widget.html` (`?limit=3`).
   Payload WS `{type:"videos"}`: `items` = creators, `companyItems` = empresas. Não renomear campos.
 - Toda URL de feed nova: verificar por GET (200 + parseia RSS/Atom + item ≤90 dias) antes de
@@ -61,7 +61,7 @@ Fonte única: `README.md` + `docs/ARCHITECTURE.md` + `docs/CONFIGURATION.md` +
 - Tag `v*` dispara `release.yml` (jobs `windows-installer` = NSIS; `linux-packages` = AppImage
   sempre + pacman só em tag sem `-rc`: o pacman transforma `1.2.0-rc.1` em `1.2.0_rc.1`, que o
   vercmp ordena ACIMA de `1.2.0` e bloquearia o upgrade final); `-rc` no nome = prerelease.
-  Bump nos TRÊS `package.json` (raiz, server, widget).
+  Bump obrigatório nos TRÊS `package.json` (raiz, server, widget); o workflow manual deve ser revisado antes.
   **Push de tag é gate humano — só com "pode subir" do Fernando.**
 
 ## Memory protocol

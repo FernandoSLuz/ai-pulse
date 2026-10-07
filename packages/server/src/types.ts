@@ -5,13 +5,19 @@ export interface ModelRecord {
   intelligence: number;
   coding: number;
   math: number;
-  priceInput: number;
-  priceOutput: number;
-  priceBlended: number;
+  /** USD per 1M tokens. null means the source did not publish the field. */
+  priceInput: number | null;
+  priceOutput: number | null;
+  priceBlended: number | null;
   speed: number;
   latency: number;
+  /** Open weights, Open source (license evidenced), Gated, Proprietary, Unknown. */
   accessibility: string;
   accessibilityScore: number;
+  license?: string | null;
+  licenseUrl?: string | null;
+  weightsUrl?: string | null;
+  priceSourceUrl?: string | null;
   fetchedAt: string;
   url?: string | null;
   displayName?: string;
@@ -55,6 +61,26 @@ export interface VideoItem {
   kind?: "creator" | "company";
 }
 
+export interface SocialProfile {
+  handle: string;
+  name: string;
+  description?: string;
+  userId?: string;
+  profileUrl: string;
+  source: "default" | "user";
+  enabled: boolean;
+}
+
+export interface SocialPost {
+  id: string;
+  text: string;
+  createdAt: string;
+  authorHandle: string;
+  authorName: string;
+  url: string;
+  source: "x-api";
+}
+
 export interface CategoryWinners {
   overall: string;
   coding: string;
@@ -67,7 +93,7 @@ export interface CategoryWinners {
 export interface RankingsSnapshot {
   models: ModelRecord[];
   winners: CategoryWinners;
-  updatedAt: string;
+  updatedAt: string | null;
   variantAliases?: Record<string, string>;
   variantsCollapsed?: number;
   health?: {
@@ -154,7 +180,7 @@ export interface AnalystBriefing {
   yourStack: string;
   upgradeSuggestion: string | null;
   upgradeSlug: string | null;
-  analystSource: "deepseek" | "gemini" | "groq" | "cerebras" | "openrouter" | "ollama" | "rules";
+  analystSource: "local" | "deepseek" | "gemini" | "groq" | "cerebras" | "openrouter" | "ollama" | "rules";
   createdAt: string;
 }
 

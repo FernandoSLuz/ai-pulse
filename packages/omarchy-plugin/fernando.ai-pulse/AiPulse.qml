@@ -73,7 +73,12 @@ Panel {
   }
 
   function fmt(n) { return n > 0 ? String(Math.round(n * 10) / 10) : "—" }
-  function fmtPrice(n) { return n > 0 ? Number(n).toFixed(2) : "—" }
+  // Zero is a valid published price (for example, a free API). Only null,
+  // non-numeric, and negative values mean that pricing is unavailable.
+  function fmtPrice(n) {
+    var value = Number(n)
+    return n === null || n === undefined || n === "" || !isFinite(value) || value < 0 ? "—" : value.toFixed(2)
+  }
   function fmtSpeed(n) { return n > 0 ? String(Math.round(n)) : "—" }
 
   function shortAccess(a) {

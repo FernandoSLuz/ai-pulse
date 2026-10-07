@@ -8,9 +8,13 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
   windows-installer:
-    name: Build Windows installer
+    name: Windows installer (x64)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,31 +30,63 @@ jobs:
       - name: Fetch the Electron binary
         run: npx install-electron
 
-      # better-sqlite3 >= 13 ships one Node-API prebuild per platform, so there
-      # is no Electron-ABI rebuild step anymore — just prove it loads.
+      - name: Smoke-test better-sqlite3 under Node
+        run: node -e "if (+process.versions.napi < 10) process.exit(1); new (require('better-sqlite3'))(':memory:').close(); console.log('better-sqlite3 OK under node', process.versions.napi);"
       - name: Smoke-test better-sqlite3 under Electron
         shell: bash
-        run: ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron.exe -e "new (require('better-sqlite3'))(':memory:').close(); console.log('better-sqlite3 OK under electron', process.versions.electron);"
+        run: ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron.exe -e "if (+process.versions.napi < 10) process.exit(1); new (require('better-sqlite3'))(':memory:').close(); console.log('better-sqlite3 OK under electron', process.versions.electron, process.versions.napi);"
 
-      - name: Build and package (NSIS)
+      - name: Build and package (NSIS x64)
         shell: bash
         run: |
           npm run build -w @ai-pulse/widget
-          cd packages/widget && npx electron-builder --win --publish never
+          cd packages/widget && npx electron-builder --win nsis --x64 --publish never
 
-      - name: Publish GitHub Release (Windows assets)
-        uses: softprops/action-gh-release@v2
+      - name: Upload Windows assets
+        uses: actions/upload-artifact@v4
         with:
-          # Tags containing "-rc" (e.g. v1.2.0-rc.1) publish as a prerelease.
-          prerelease: ${{ contains(github.ref_name, '-rc') }}
-          generate_release_notes: true
-          fail_on_unmatched_files: false
-          files: |
+          name: release-windows-x64
+          if-no-files-found: error
+          path: |
             packages/widget/release/*.exe
             packages/widget/release/*.blockmap
             packages/widget/release/latest.yml
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  macos-installer:
+    name: macOS installer (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            arch: x64
+          - runner: macos-15
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Fetch the Electron binary
+        run: npx install-electron
+      - name: Smoke-test better-sqlite3 under Electron
+        run: ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/Electron.app/Contents/MacOS/Electron -e "if (+process.versions.napi < 10) process.exit(1); new (require('better-sqlite3'))(':memory:').close(); console.log('better-sqlite3 OK under electron', process.versions.electron, process.versions.napi);"
+      - name: Build and package
+        run: |
+          npm run build -w @ai-pulse/widget
+          cd packages/widget
+          npx electron-builder --mac dmg zip --${{ matrix.arch }} --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-macos-${{ matrix.arch }}
+          if-no-files-found: error
+          path: |
+            packages/widget/release/*.dmg
+            packages/widget/release/*.zip
 
   linux-packages:
     name: Build Linux packages
@@ -63,9 +99,8 @@ jobs:
           node-version: 22
           cache: npm
 
-      # fpm's pacman writer shells out to bsdtar, which the runner image lacks.
       - name: Install packaging tools
-        run: sudo apt-get update && sudo apt-get install -y libarchive-tools
+        run: sudo apt-get update && sudo apt-get install -y libarchive-tools rpm
 
       - name: Install
         run: npm ci
@@ -74,28 +109,45 @@ jobs:
         run: npx install-electron
 
       - name: Smoke-test better-sqlite3 under Electron
-        run: ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron -e "new (require('better-sqlite3'))(':memory:').close(); console.log('better-sqlite3 OK under electron', process.versions.electron);"
+        run: ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron -e "if (+process.versions.napi < 10) process.exit(1); new (require('better-sqlite3'))(':memory:').close(); console.log('better-sqlite3 OK under electron', process.versions.electron, process.versions.napi);"
 
-      # pacman turns 1.2.0-rc.1 into pkgver 1.2.0_rc.1, which vercmp sorts ABOVE
-      # the final 1.2.0 — so release candidates ship as AppImage only.
-      - name: Build and package (AppImage, plus pacman for final releases)
+      - name: Build and package (x64)
         run: |
           npm run build -w @ai-pulse/widget
-          TARGETS="AppImage"
-          case "${GITHUB_REF_NAME}" in *-rc*) ;; *) TARGETS="AppImage pacman" ;; esac
+          TARGETS="AppImage deb rpm"
+          case "${GITHUB_REF_NAME}" in *-rc*) ;; *) TARGETS="$TARGETS pacman" ;; esac
           echo "targets: $TARGETS"
-          cd packages/widget && npx electron-builder --linux $TARGETS --publish never
+          cd packages/widget && npx electron-builder --linux $TARGETS --x64 --publish never
           ls -la release
 
-      - name: Publish GitHub Release (Linux assets)
+      - name: Upload Linux assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-linux-x64
+          if-no-files-found: error
+          path: |
+            packages/widget/release/*.AppImage
+            packages/widget/release/*.deb
+            packages/widget/release/*.rpm
+            packages/widget/release/*.pacman
+            packages/widget/release/latest-linux.yml
+
+  publish:
+    name: Publish atomic GitHub Release
+    needs: [windows-installer, macos-installer, linux-packages]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+      - name: Publish all platform assets
         uses: softprops/action-gh-release@v2
         with:
           prerelease: ${{ contains(github.ref_name, '-rc') }}
           generate_release_notes: true
-          fail_on_unmatched_files: false
-          files: |
-            packages/widget/release/*.AppImage
-            packages/widget/release/*.pacman
-            packages/widget/release/latest-linux.yml
+          fail_on_unmatched_files: true
+          files: release-assets/**
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

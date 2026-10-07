@@ -1,6 +1,6 @@
 # Architecture
 
-AI Pulse is a local "AI model radar" for Windows and Linux (Omarchy/Hyprland). It combines a news feed, benchmark rankings, an AI‑analyst briefing, an embedded chat with a web‑search agent, a "My Stack" upgrade advisor, and an always‑on desktop leaderboard widget — all driven from a single desktop app.
+AI Pulse is a local "AI model radar" for Windows, macOS, and Linux (Omarchy/Hyprland). It combines a news feed, benchmark rankings, a local AI-analyst briefing, local chat with optional web search, a "My Stack" upgrade advisor, social posts, and an always-on desktop leaderboard widget — all driven from a single desktop app.
 
 This document explains how the pieces fit together: the three packages, the supervisor process model, and how data flows through a poll cycle.
 
@@ -27,7 +27,7 @@ The Electron app is the **single entry point**. Its main process:
 
 - **Supervises the server** as a child process (see [Process model](#process-model)).
 - Shows the **tray** with `Restart/Stop/Start Background Service` and `Quit AI Pulse` (which stops both the server and the app).
-- Shows the **Settings/control window** — the one place you edit API keys and preferences.
+- Shows the **Settings/control window** — the one place you edit local AI preferences and optional integration tokens.
 - Shows the **docked leaderboard window** — the always‑on desktop widget.
 - **Integrates with the desktop per OS** (`src/platform.ts`). On Windows the NSIS installer provides the shortcuts and the `aipulse://` registry entry, and "Start on login" is an `HKCU` Run entry. On Linux the app itself writes, on every start, `~/.local/share/applications/ai-pulse.desktop` (launcher + `aipulse://` handler via `xdg-mime`), the hicolor icon, and — while "Start on login" is on — `~/.config/autostart/ai-pulse.desktop`. The tray is a StatusNotifierItem over D-Bus there (no appindicator library needed).
 
@@ -85,7 +85,7 @@ flowchart TD
         AA["Artificial Analysis"]
         RSS["RSS feeds"]
         YT["YouTube"]
-        LLM["Cloud LLM providers"]
+        LLM["Local GGUF + llama-server"]
     end
 
     Supervisor -- "spawns + health-pings GET /api/health" --> Server
@@ -115,26 +115,20 @@ Alongside the poll cycle, clients read content on demand via the **REST API**, a
 
 ### AI curation reliability
 
-Curation is **cloud‑only** (no local models). An **LLM router** tries providers in order, using the first that answers with valid JSON, in this order:
+Curation and chat use a **local GGUF model** served by the bundled/configured llama-server runtime. The first setup detects available RAM, offers light/balanced profiles, downloads the selected model with progress and hash verification, and permits cancellation. The model catalogue is maintained separately so a tested profile can be replaced without duplicating model sizes in this document.
 
-| # | Provider / model |
+| # | Local mode |
 | --- | --- |
-| 1 | DeepSeek V4.1 Flash |
-| 2 | DeepSeek V4 Pro |
-| 3 | Gemini 3.5 Flash |
-| 4 | Cerebras Llama 3.3 70B |
-| 5 | Groq Llama 3.1 8B |
-| 6 | OpenRouter Llama 3.3 70B (`:free`) |
-| 7 | Gemini 3.5 Flash Lite |
-| 8 | OpenRouter DeepSeek V3 (`:free`) |
+| 1 | Light profile — Qwen3.5 0.8B Q4 GGUF (catalogue-pinned) |
+| 2 | Balanced profile — Qwen3 1.7B Q8_0 GGUF (catalogue-pinned) |
 
-Each candidate has **independent backoff**:
+The local runtime reports download, hash, startup, and cancellation states. If
+the model is unavailable, deterministic rules continue to provide rankings and
+briefings; the app exposes that state instead of silently pretending a model ran.
+The runtime is CPU-only and local; optional benchmark, search, and X integrations
+never provide or substitute a language model.
 
-- **Rate‑limited** (`429` / quota): honors the provider's retry hint.
-- **Unavailable** (bad model id / `400`/`401`/`403`/`404`): parks for **~12h**.
-- **Transient** errors: cool down for **~2m**.
-
-Curation **never silently degrades**. Every run records which provider served it — or that it fell back to deterministic **"rules"** — in the DB. `GET /api/health` returns full provider status plus the last outcome, so the app can show `AI: DeepSeek V4 ✓` or `AI: degraded (rules)`. You need **at least one** provider key; adding more makes curation more resilient.
+Curation **never silently degrades**. Every run records the local profile/runtime or deterministic **"rules"** mode in the DB. `GET /api/health` returns model download/runtime status plus the last outcome, so the app can show local readiness or `AI: degraded (rules)`. No cloud key is required.
 
 ### Benchmark ingestion
 
@@ -155,7 +149,7 @@ stale entries.
 | `fetchers/` | Pull benchmarks (Artificial Analysis), news (RSS), and videos (YouTube). |
 | `collapse-variants.ts` | Presentation-only collapse of effort/reasoning variants for the leaderboard. |
 | `rankings.ts` | Builds `/api/rankings` after collapse; winners and ★ always point at a visible row. |
-| `analyst/llm-router.ts` | Routes curation across cloud providers with per‑provider backoff. |
+| `analyst/llm-router.ts` | Selects the local runtime/profile and rules mode. |
 | `analyst/engine.ts` | Runs the AI analyst / curation logic. |
 | `poll-health.ts` | Records poll outcomes and provider status surfaced by `/api/health`. |
 | `db.ts` | SQLite access via `better-sqlite3`. |
@@ -180,7 +174,7 @@ Company channels live in `config/sources.json` as `companyChannels` (same shape 
 | --- | --- |
 | `main.ts` | Electron main process: windows, tray, and app lifecycle. |
 | `src/supervisor.ts` | `ServerSupervisor` — spawns, health‑pings, and restarts the server child. |
-| `src/config.ts` | Loads and edits `config.json` (API keys + preferences). |
+| `src/config.ts` | Loads and edits `config.json` (local AI preferences + optional integration tokens). |
 | `src/paths.ts` | Resolves userData, resource, DB, and log locations. |
 | `src/platform.ts` | Linux desktop integration: `.desktop` entry, icon, `aipulse://` handler, XDG autostart. |
 | `renderer/settings.*` | The Settings/control window UI. |

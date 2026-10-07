@@ -31,11 +31,32 @@
       </div>
     </header>
 
-    <section id="briefing" class="briefing-card briefing-compact"></section>
-    <section id="role-gap-banner" class="role-gap-banner hidden" aria-live="polite"></section>
+    <div class="workspace">
+      <aside class="sidebar" aria-label="Dashboard navigation">
+        <p class="sidebar-eyebrow">Workspace</p>
+        <nav class="main-nav" id="main-nav">
+          <button class="nav-item active" data-view="overview" type="button"><span class="nav-icon">⌂</span><span>Overview</span><small>Today at a glance</small></button>
+          <button class="nav-item" data-view="news" type="button"><span class="nav-icon">◉</span><span>News</span><small>Signals and picks</small></button>
+          <button class="nav-item" data-view="videos" type="button"><span class="nav-icon">▶</span><span>Videos</span><small>Creators and labs</small></button>
+          <button class="nav-item" data-view="benchmarks" type="button"><span class="nav-icon">↗</span><span>Benchmarks</span><small>Compare models</small></button>
+          <button class="nav-item" data-view="social" type="button"><span class="nav-icon">𝕏</span><span>X / Twitter</span><small>People you follow</small></button>
+        </nav>
+        <div class="sidebar-footer">
+          <button class="sidebar-link" type="button" id="sidebar-stack">▣ <span>My Stack</span></button>
+          <button class="sidebar-link" type="button" id="sidebar-chat">✦ <span>Ask AI Pulse</span></button>
+        </div>
+      </aside>
+      <main class="dashboard-main">
+        <div class="view-heading" id="view-heading">
+          <div><h2 id="view-title">Overview</h2><p id="view-description" class="muted">A calm read of what changed and what deserves your attention.</p></div>
+          <span class="live-pill" id="connection-status"><i></i> Connecting…</span>
+        </div>
+
+    <section id="briefing" class="briefing-card briefing-compact" data-section="overview"></section>
+    <section id="role-gap-banner" class="role-gap-banner hidden" aria-live="polite" data-section="overview"></section>
 
     <div class="content-grid">
-      <section class="panel news-panel">
+      <section class="panel news-panel" data-section="news overview">
         <div class="panel-header">
           <div>
             <h2>News Feed</h2>
@@ -61,9 +82,10 @@
           </div>
         </div>
         <div id="news-feed" class="news-feed"></div>
+        <div class="pager" id="news-pager"></div>
       </section>
 
-      <section class="panel aipick-panel">
+      <section class="panel aipick-panel" data-section="news overview">
         <div class="panel-header">
           <h2>AI Pick</h2>
           <div class="filters" id="aipick-filters" aria-label="AI Pick time range">
@@ -75,35 +97,40 @@
           </div>
         </div>
         <div id="aipick-feed" class="news-feed"></div>
+        <div class="pager" id="aipick-pager"></div>
       </section>
 
-      <section class="panel creators-panel">
+      <section class="panel creators-panel" data-section="videos">
         <div class="panel-header">
           <div>
             <h2>Creators</h2>
             <span id="videos-updated" class="muted panel-sub"></span>
           </div>
+          <div class="segmented" role="tablist" aria-label="Video source"><button type="button" class="segment active" data-video-kind="creator">Creators</button><button type="button" class="segment" data-video-kind="company">Companies</button></div>
         </div>
         <div id="creators-feed" class="creators-feed"></div>
+        <div class="pager" id="creators-pager"></div>
       </section>
 
-      <section class="panel companies-panel">
+      <section class="panel companies-panel" data-section="videos">
         <div class="panel-header">
           <div>
             <h2>Companies</h2>
             <span id="companies-videos-updated" class="muted panel-sub"></span>
-          </div>
+          </div><button type="button" id="refresh-videos" class="btn btn-ghost">Refresh videos</button>
         </div>
         <div id="companies-feed" class="creators-feed"></div>
+        <div class="pager" id="companies-pager"></div>
       </section>
     </div>
 
-    <div class="main-grid rankings-band">
+    <div class="main-grid rankings-band" data-section="benchmarks">
       <section class="panel rankings-panel">
         <div class="panel-header">
-          <h2>Benchmark Leaderboard</h2>
-          <span id="rankings-updated" class="muted"></span>
+          <div><h2>Benchmark Leaderboard</h2><span id="rankings-updated" class="muted"></span></div>
+          <button type="button" id="refresh-rankings" class="btn btn-ghost">Refresh benchmarks</button>
         </div>
+        <div class="benchmark-tools"><label class="search-field"><span class="sr-only">Search models</span><input id="benchmark-search" type="search" placeholder="Search model or creator…" /></label><div class="segmented" role="tablist" aria-label="Model access"><button type="button" class="segment active" data-access-filter="all">All</button><button type="button" class="segment" data-access-filter="open">Open access</button></div></div>
         <div class="table-wrap">
           <table id="rankings-table">
             <thead>
@@ -114,7 +141,7 @@
                 <th class="sortable" data-sort="intelligence">Intel</th>
                 <th class="sortable" data-sort="coding">Code</th>
                 <th class="sortable" data-sort="math">Math</th>
-                <th class="sortable" data-sort="priceBlended">Price</th>
+                <th class="sortable" data-sort="priceBlended" title="USD per 1M tokens · input / output · blended = 3:1 input/output">$/1M in / out</th>
                 <th class="sortable" data-sort="speed">Speed</th>
                 <th class="sortable" data-sort="accessibilityScore">Access</th>
                 <th>Winners</th>
@@ -123,11 +150,30 @@
             <tbody></tbody>
           </table>
         </div>
+        <div class="pager" id="rankings-pager"></div>
         <p class="attribution">
           Benchmark data from <a href="https://artificialanalysis.ai/leaderboards/models" target="_blank" rel="noopener">Artificial Analysis</a>
-          (free API + public leaderboard). Math Index is not in the free/public payload — shown as — until AA Pro.
+          (free API + public leaderboard). A dash means Artificial Analysis did not publish that metric for the model.
         </p>
       </section>
+    </div>
+
+    <section class="panel social-panel" data-section="social">
+        <div class="panel-header">
+          <div><p class="eyebrow">Curated social signal</p><h2>People shaping AI</h2><p class="muted panel-sub">Follow public voices and keep the useful posts close to your radar.</p></div>
+          <button type="button" class="btn btn-primary" id="add-social-profile">+ Add profile</button>
+        </div>
+      <form id="social-profile-form" class="social-add-form hidden" novalidate>
+        <label for="social-handle">X handle</label><input id="social-handle" name="handle" type="text" inputmode="text" autocomplete="off" placeholder="@username" maxlength="15" pattern="@?[A-Za-z0-9_]{1,15}" required />
+        <button type="submit" class="btn btn-primary">Follow</button><button type="button" class="btn btn-ghost" id="cancel-social-profile">Cancel</button>
+        <span class="form-error" id="social-form-error" role="alert"></span>
+      </form>
+      <p class="social-status muted" id="social-status" aria-live="polite"></p>
+      <div class="social-toolbar"><div class="profile-pills" id="social-profiles" role="list"></div><button type="button" class="filter active" data-social-filter="all">All posts</button><button type="button" class="btn btn-ghost btn-sm" id="refresh-social">Refresh</button></div>
+      <div id="social-feed" class="social-feed"><div class="empty-state"><span class="empty-mark">𝕏</span><strong>Loading your X feed</strong><p class="muted">Posts from the people you follow will appear here.</p></div></div>
+      <div class="pager" id="social-pager"></div>
+    </section>
+      </main>
     </div>
   </div>
 
@@ -145,8 +191,8 @@
         <label class="pref-check">
           <input type="checkbox" id="prefer-cursor-ready" checked />
           <span>
-            <strong>Prefer free unlimited in Cursor</strong>
-            <small>For the Free role, favor open models you can run via Ollama / custom OpenAI base URL (no Cursor usage limits)</small>
+            <strong>Prefer models with published weights</strong>
+            <small>For the Free role, favor models with verifiable weights and licensing that you can run through Ollama or a compatible local endpoint.</small>
           </span>
         </label>
         <div id="stack-entries" class="stack-entries"></div>

@@ -47,18 +47,18 @@ Related toggle: **Start hidden in tray** (Settings → Startup & service) contro
 
 ## Where logs, database, and config live
 
-Everything lives under the app's `userData` folder. On Windows that is `%APPDATA%\AI Pulse\`; on Linux it is `~/.config/AI Pulse/`.
+Everything lives under the app's `userData` folder. On Windows that is `%APPDATA%\AI Pulse\`, on macOS `~/Library/Application Support/AI Pulse/`, and on Linux `~/.config/AI Pulse/`.
 
-| What | Windows | Linux |
-| --- | --- | --- |
-| API keys + preferences | `%APPDATA%\AI Pulse\config.json` | `~/.config/AI Pulse/config.json` |
-| SQLite database | `%APPDATA%\AI Pulse\data\ai-pulse.db` | `~/.config/AI Pulse/data/ai-pulse.db` |
-| Server log | `%APPDATA%\AI Pulse\logs\server.log` | `~/.config/AI Pulse/logs/server.log` |
-| Updater log | `%APPDATA%\AI Pulse\logs\updater.log` | `~/.config/AI Pulse/logs/updater.log` |
+| What | Windows | macOS | Linux |
+| --- | --- | --- | --- |
+| Local AI profile + optional integration tokens | `%APPDATA%\AI Pulse\config.json` | `~/Library/Application Support/AI Pulse/config.json` | `~/.config/AI Pulse/config.json` |
+| SQLite database | `%APPDATA%\AI Pulse\data\ai-pulse.db` | `~/Library/Application Support/AI Pulse/data/ai-pulse.db` | `~/.config/AI Pulse/data/ai-pulse.db` |
+| Server log | `%APPDATA%\AI Pulse\logs\server.log` | `~/Library/Application Support/AI Pulse/logs/server.log` | `~/.config/AI Pulse/logs/server.log` |
+| Updater log | `%APPDATA%\AI Pulse\logs\updater.log` | `~/Library/Application Support/AI Pulse/logs/updater.log` | `~/.config/AI Pulse/logs/updater.log` |
 
 Notes:
 
-- `config.json` is the **only** place you edit API keys — the app injects them into the server's environment. Edit keys from **Settings → Connections**.
+- `config.json` is the **only** place you edit the local AI profile and optional integration tokens. Edit them from **Settings → Local AI** and **Settings → Connections**.
 - `server.log` captures server stdout/stderr and is rotated at **5 MB**.
 
 ### Open the logs
@@ -107,6 +107,7 @@ AI Pulse checks GitHub Releases for a newer version on startup and every few hou
 - Click **Download & install** to fetch it, then **Restart & install** to apply. You can also **Check for updates** manually there.
 - Release-candidate builds are prereleases and are not offered as automatic updates.
 - **Linux:** in-app updates work for the **AppImage** (`latest-linux.yml`). A **pacman** install shows *unsupported* in **Settings → Updates** — upgrade it with `sudo pacman -U ./ai-pulse-<version>.pacman` from the next final release (RCs ship no `.pacman`).
+- **macOS:** Intel and Apple Silicon builds are architecture-specific and currently update by downloading the next matching DMG manually.
 
 ## Omarchy: theme and bar widget
 

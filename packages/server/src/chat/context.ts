@@ -16,13 +16,14 @@ export function buildPulseSystemPrompt(searchEnabled: boolean): string {
       return `- ${cat}: ${m?.name ?? slug}${m ? ` (intel ${m.intelligence.toFixed(1)})` : ""}`;
     });
 
-  const topRows = snapshot.models.slice(0, 12).map((m, i) => {
-    const price = m.priceBlended > 0 ? `$${m.priceBlended.toFixed(2)}` : "free/n/a";
-    return `${i + 1}. ${m.name} (${m.creator}) — intel ${m.intelligence.toFixed(1)}, code ${m.coding.toFixed(1)}, price ${price}, speed ${m.speed.toFixed(0)}`;
+  const topRows = snapshot.models.slice(0, 8).map((m, i) => {
+    const price = m.priceBlended === null ? "price n/a" : `$${m.priceBlended.toFixed(2)}`;
+    const license = m.license ? `, license ${m.license}` : ", license unknown";
+    return `${i + 1}. ${m.name} (${m.creator}) — slug ${m.slug}, intel ${m.intelligence.toFixed(1)}, code ${m.coding.toFixed(1)}, price ${price}, speed ${m.speed.toFixed(0)}, access ${m.accessibility}${license}`;
   });
 
-  const newsLines = news.map(
-    (n) => `- [${n.source}] ${n.title} (score ${Math.round(n.relevanceScore)})`,
+  const newsLines = news.slice(0, 8).map(
+    (n) => `- ${n.id.slice(0, 8)} [${n.source}] ${n.title.slice(0, 160)} (score ${Math.round(n.relevanceScore)})`,
   );
 
   const stackLines =
@@ -42,19 +43,14 @@ Upgrade: ${briefing.upgradeSuggestion || "none"}`
     : "(no briefing cached yet)";
 
   const toolsHint = searchEnabled
-    ? `You have tools:
-- query_pulse: look up live AI Pulse data (rankings, news, stack, briefing). Use for questions about this dashboard's data.
-- web_search: search the live web via the search agent. Use for broader/current-events questions beyond Pulse data.
-Prefer query_pulse for local Pulse questions. Use web_search when you need up-to-date external info. Cite sources with titles/URLs when you used web_search.`
-    : `You have tools:
-- query_pulse: look up live AI Pulse data (rankings, news, stack, briefing).
-Web search is not configured. Answer broader questions from knowledge and Pulse data; say if live web search would help.`;
+    ? "The supplied snapshot is the current AI Pulse data. An explicit web-search result may follow; cite its titles/URLs when present."
+    : "The supplied snapshot is the current AI Pulse data. Web search is not configured; answer from this snapshot and general knowledge.";
 
-  return `You are AI Pulse Assistant — a helpful analyst for a local AI news + benchmark dashboard.
+  return `You are AI Pulse Assistant for a local AI news and benchmark dashboard. Default to English unless the user explicitly asks for another language.
 
 ${toolsHint}
 
-Be concise and practical. Prefer facts from tools/context over guessing.
+Be concise and practical. Prefer facts from the supplied Pulse data. Never invent benchmark scores, prices, licenses, news, or upgrade slugs. A missing price is "price n/a"; $0.00 is a real zero. Treat accessibility/license as unknown unless explicitly supplied. Any AI commentary must be clearly framed as commentary, while dashboard facts stay exact.
 
 ## Latest briefing
 ${briefingBlock}

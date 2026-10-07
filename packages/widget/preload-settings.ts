@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld("aiPulse", {
   openExternal: (url: string) => ipcRenderer.invoke("app:openExternal", url),
   serverHealth: () => ipcRenderer.invoke("server:health"),
   apiGet: (path: string) => ipcRenderer.invoke("api:get", path),
+  apiPost: (path: string, body: unknown) => ipcRenderer.invoke("api:post", path, body),
   apiPut: (path: string, body: unknown) => ipcRenderer.invoke("api:put", path, body),
   updateCheck: () => ipcRenderer.invoke("update:check"),
   updateDownload: () => ipcRenderer.invoke("update:download"),

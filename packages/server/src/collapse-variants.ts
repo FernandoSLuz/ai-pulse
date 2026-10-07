@@ -140,7 +140,7 @@ function normalizeName(name: string): NormalizedName {
 }
 
 function priceRank(model: ModelRecord): number {
-  return model.priceBlended && model.priceBlended > 0 ? model.priceBlended : Number.POSITIVE_INFINITY;
+  return model.priceBlended !== null && model.priceBlended > 0 ? model.priceBlended : Number.POSITIVE_INFINITY;
 }
 
 /**

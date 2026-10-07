@@ -49,6 +49,13 @@ function num(value: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function nullableNum(value: unknown): number | null {
+  if (typeof value === "boolean" || value === null || value === undefined || (typeof value === "string" && value.trim() === "")) return null;
+  if (typeof value !== "number" && typeof value !== "string") return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
 function extractBalancedObject(text: string, openBraceIndex: number): string | null {
   if (openBraceIndex < 0 || text[openBraceIndex] !== "{") return null;
   let depth = 0;
@@ -92,7 +99,10 @@ function rowRichness(row: AaSiteRow): number {
 function indexSiteRows(payload: string): { metrics: Map<string, AaSiteRow>; metadata: Map<string, AaSiteRow> } {
   const metrics = new Map<string, AaSiteRow>();
   const metadata = new Map<string, AaSiteRow>();
-  const slugRe = /"slug":"([^"]+)"/g;
+  // RSC is not a stable JSON document: formatting, escaping and chunk
+  // boundaries change between deployments. Keep the extractor tolerant of
+  // whitespace while still joining only objects that carry a real slug.
+  const slugRe = /"slug"\s*:\s*"([^"\\]+)"/g;
   let match: RegExpExecArray | null;
 
   while ((match = slugRe.exec(payload)) !== null) {
@@ -144,14 +154,14 @@ function toModelRecord(row: AaSiteRow, fetchedAt: string): ModelRecord | null {
   const intelligence = num(row.intelligenceIndex);
   if (intelligence <= 0) return null;
 
-  const priceInput = num(row.price1mInputTokens);
-  const priceOutput = num(row.price1mOutputTokens);
+  const priceInput = nullableNum(row.price1mInputTokens);
+  const priceOutput = nullableNum(row.price1mOutputTokens);
   // Prefer AA's standard 3:1 blend (public field is price1mBlended0To3To1).
   // Never use 7:2:1 cache-heavy blends — they understate frontier API cost.
   const priceBlended =
-    num(row.price1mBlended0To3To1) ||
-    num(row.price1mBlended3To1) ||
-    (priceInput || priceOutput ? blendedPrice(priceInput, priceOutput) : 0);
+    nullableNum(row.price1mBlended0To3To1) ??
+    nullableNum(row.price1mBlended3To1) ??
+    (priceInput !== null && priceOutput !== null ? blendedPrice(priceInput, priceOutput) : null);
 
   const speed =
     num(row.medianOutputTokensPerSecond) ||
@@ -177,8 +187,12 @@ function toModelRecord(row: AaSiteRow, fetchedAt: string): ModelRecord | null {
     priceBlended,
     speed,
     latency,
-    accessibility: openWeights ? "Open weights" : "API only",
-    accessibilityScore: openWeights ? 4 : 1,
+    accessibility: openWeights ? "Open weights" : "Unknown",
+    accessibilityScore: openWeights ? 4 : 0,
+    license: null,
+    licenseUrl: null,
+    weightsUrl: null,
+    priceSourceUrl: `https://artificialanalysis.ai/models/${row.slug}`,
     fetchedAt,
     url: `https://artificialanalysis.ai/models/${row.slug}`,
   };
@@ -191,12 +205,18 @@ async function fetchPayload(url: string): Promise<string | null> {
       Accept: "text/x-component, text/html, application/json, */*",
       RSC: "1",
     },
+    signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) {
     console.warn(`[AA Public] ${url} returned ${res.status}`);
     return null;
   }
-  return res.text();
+  const text = await res.text();
+  if (!text.trim()) {
+    console.warn(`[AA Public] ${url} returned an empty payload`);
+    return null;
+  }
+  return text;
 }
 
 /**
@@ -225,7 +245,7 @@ export async function fetchAaPublicSiteModels(): Promise<ModelRecord[]> {
 
       const withCreator = models.filter((m) => m.creator !== "Unknown").length;
       const withSpeed = models.filter((m) => m.speed > 0).length;
-      const withPrice = models.filter((m) => m.priceBlended > 0).length;
+      const withPrice = models.filter((m) => (m.priceBlended ?? 0) > 0).length;
       console.log(
         `[AA Public] Fetched ${models.length} models from ${url}` +
           ` (${metrics.size - models.length} deprecated skipped, creator=${withCreator},` +

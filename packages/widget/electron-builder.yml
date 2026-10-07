@@ -43,9 +43,24 @@ nsis:
   # Never wipe userData (config.json with API keys) on uninstall/update.
   deleteAppDataOnUninstall: false
 
+mac:
+  # DMG is the friendly installer; ZIP is useful for managed deployments.
+  # CI builds x64 and arm64 separately. Universal is intentionally not emitted
+  # because better-sqlite3 is a native module and must be built per arch.
+  target:
+    - dmg
+    - zip
+  icon: build/icon.png
+  category: public.app-category.utilities
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  hardenedRuntime: false
+  gatekeeperAssess: false
+
 linux:
   target:
     - AppImage
+    - deb
+    - rpm
     - pacman
   # Also the .desktop file name and StartupWMClass; must match the
   # app.setDesktopName("ai-pulse.desktop") call in main.ts (Wayland app_id).
