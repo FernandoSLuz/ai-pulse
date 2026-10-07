@@ -1592,8 +1592,9 @@ function renderSocial(reload = false) {
   if (embedded && profiles.length) {
     const profile = profiles.find((p) => p.handle === state.social.selectedHandle);
     if (state.view !== "social") return;
-    if (!reload && feed.dataset.embedHandle === profile.handle && (document.getElementById("x-timeline-frame") || feed.dataset.embedState === "unavailable")) return;
+    if (!reload && feed.dataset.embedHandle === profile.handle && feed.dataset.embedOrigin === state.social.embedOrigin && (document.getElementById("x-timeline-frame") || feed.dataset.embedState === "unavailable")) return;
     feed.dataset.embedHandle = profile.handle;
+    feed.dataset.embedOrigin = state.social.embedOrigin || "";
     delete feed.dataset.embedState;
     const displayName = String(profile.name || "").replace(/^@+/, "").trim();
     const hasDistinctName = displayName && displayName.toLowerCase() !== String(profile.handle).toLowerCase();
@@ -1622,6 +1623,7 @@ function renderSocial(reload = false) {
     return;
   }
   delete feed.dataset.embedHandle;
+  delete feed.dataset.embedOrigin;
   delete feed.dataset.embedState;
   const posts = state.social.posts || [];
   if (!posts.length) {
