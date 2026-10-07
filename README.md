@@ -16,13 +16,15 @@ It lives in your **system tray**, starts silently on login, keeps itself alive, 
 
    | OS | Asset | Install |
    |----|-------|---------|
-   | **Windows** | `AI-Pulse-Setup-<version>.exe` | Run it (per-user install, no admin; adds desktop + Start-menu shortcuts). If Windows SmartScreen warns about an unsigned app, choose **More info → Run anyway**. |
-   | **macOS** (Intel) | `AI-Pulse-<version>-x64.dmg` | Open the DMG and drag AI Pulse to Applications. |
-   | **macOS** (Apple Silicon) | `AI-Pulse-<version>-arm64.dmg` | Open the DMG and drag AI Pulse to Applications. |
-   | **Linux x64** (portable) | `ai-pulse-<version>.AppImage` | `chmod +x ai-pulse-<version>.AppImage && ./ai-pulse-<version>.AppImage` — needs FUSE 2 (`sudo pacman -S fuse2` on Arch/Omarchy). |
-   | **Linux x64** (Debian/Ubuntu) | `ai-pulse-<version>.deb` | `sudo apt install ./ai-pulse-<version>.deb`. |
-   | **Linux x64** (Fedora/RHEL) | `ai-pulse-<version>.rpm` | `sudo dnf install ./ai-pulse-<version>.rpm`. |
-   | **Linux x64** (Arch / Omarchy) | `ai-pulse-<version>.pacman` | `sudo pacman -U ./ai-pulse-<version>.pacman` — final releases only. |
+   | **Windows** | `AI-Pulse-<version>-Windows-x64-Setup.exe` | Run it (per-user install, no admin; adds desktop + Start-menu shortcuts). If Windows SmartScreen warns about an unsigned app, choose **More info → Run anyway**. |
+   | **macOS** (Intel) | `AI-Pulse-<version>-macOS-x64.dmg` | Open the DMG and drag AI Pulse to Applications. |
+   | **macOS** (Apple Silicon) | `AI-Pulse-<version>-macOS-arm64.dmg` | Open the DMG and drag AI Pulse to Applications. |
+   | **Linux x64** (portable) | `AI-Pulse-<version>-Linux-x86_64.AppImage` | `chmod +x AI-Pulse-<version>-Linux-x86_64.AppImage && ./AI-Pulse-<version>-Linux-x86_64.AppImage` — needs FUSE 2 (`sudo pacman -S fuse2` on Arch/Omarchy). |
+   | **Linux x64** (Debian/Ubuntu) | `AI-Pulse-<version>-Linux-Debian-Ubuntu-amd64.deb` | `sudo apt install ./AI-Pulse-<version>-Linux-Debian-Ubuntu-amd64.deb`. |
+   | **Linux x64** (Fedora/RHEL) | `AI-Pulse-<version>-Linux-Fedora-RHEL-x86_64.rpm` | `sudo dnf install ./AI-Pulse-<version>-Linux-Fedora-RHEL-x86_64.rpm`. |
+   | **Linux x64** (Arch / Omarchy) | `AI-Pulse-<version>-Linux-Arch-Omarchy-x64.pacman` | `sudo pacman -U ./AI-Pulse-<version>-Linux-Arch-Omarchy-x64.pacman` — final releases only. |
+
+   The names tell you exactly what to download. Most people should choose the installer for their system: `.exe` on Windows, `.dmg` on macOS, or the native Linux package for their distribution. On a Mac, open **Apple menu → About This Mac**: **Chip Apple M…** means `arm64`; **Processor Intel** means `x64`. The source-code archives are for developers, and `.blockmap`/`latest*.yml` files are update metadata — they are not manual installers. These names apply from v2.0.1 onward; older releases may still use the previous filenames.
 
 2. On first launch the **Settings** window opens. Choose a local model profile; AI Pulse downloads the matching GGUF/runtime, verifies its hash, and shows progress or cancellation. No AI provider key is required. See [docs/INSTALL.md](docs/INSTALL.md).
 

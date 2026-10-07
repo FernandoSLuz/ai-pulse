@@ -29,7 +29,7 @@ win:
   target:
     - nsis
   icon: build/icon.png
-  artifactName: ${productName}-Setup-${version}.${ext}
+  artifactName: AI-Pulse-${version}-Windows-${arch}-Setup.${ext}
 
 nsis:
   oneClick: false
@@ -52,7 +52,7 @@ mac:
     - zip
   icon: build/icon.png
   category: public.app-category.utilities
-  artifactName: ${productName}-${version}-${arch}.${ext}
+  artifactName: AI-Pulse-${version}-macOS-${arch}.${ext}
   hardenedRuntime: false
   gatekeeperAssess: false
 
@@ -69,7 +69,7 @@ linux:
   category: Utility
   synopsis: Your personal AI model radar
   # No spaces: the artifact path ends up in Exec= lines and shell commands.
-  artifactName: ai-pulse-${version}.${ext}
+  artifactName: AI-Pulse-${version}-Linux-${arch}.${ext}
   desktop:
     entry:
       Name: AI Pulse
@@ -87,12 +87,15 @@ linux:
 
 deb:
   packageName: ai-pulse
+  artifactName: AI-Pulse-${version}-Linux-Debian-Ubuntu-${arch}.${ext}
 
 rpm:
   packageName: ai-pulse
+  artifactName: AI-Pulse-${version}-Linux-Fedora-RHEL-${arch}.${ext}
 
 pacman:
   packageName: ai-pulse
+  artifactName: AI-Pulse-${version}-Linux-Arch-Omarchy-${arch}.${ext}
   # electron-builder's defaults include libappindicator-gtk3 and http-parser,
   # which do not exist in the Arch repositories; Electron >= 22 speaks
   # StatusNotifierItem over D-Bus directly and needs no appindicator library.

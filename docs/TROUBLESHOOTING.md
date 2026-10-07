@@ -74,7 +74,7 @@ Then restart the app.
 
 ## Installer blocked by SmartScreen
 
-When running `AI Pulse-Setup-<version>.exe`, Windows SmartScreen may warn about an unrecognized publisher. Click **More info → Run anyway**. The installer is per-user and needs no admin rights.
+When running `AI-Pulse-<version>-Windows-x64-Setup.exe`, Windows SmartScreen may warn about an unrecognized publisher. Click **More info → Run anyway**. The installer is per-user and needs no admin rights.
 
 ## AppImage won't start (Linux)
 
@@ -82,11 +82,11 @@ The AppImage mounts itself with **FUSE 2**. If it exits immediately or complains
 
 ```bash
 sudo pacman -S fuse2      # Arch / Omarchy
-chmod +x ai-pulse-<version>.AppImage
-./ai-pulse-<version>.AppImage
+chmod +x AI-Pulse-<version>-Linux-x86_64.AppImage
+./AI-Pulse-<version>-Linux-x86_64.AppImage
 ```
 
-Most Omarchy installs already have `fuse2`. Prefer the `.pacman` package on Arch for a final release (`sudo pacman -U ./ai-pulse-<version>.pacman`); RCs are AppImage-only.
+Most Omarchy installs already have `fuse2`. Prefer the `.pacman` package on Arch for a final release (`sudo pacman -U ./AI-Pulse-<version>-Linux-Arch-Omarchy-x64.pacman`); RCs are AppImage-only.
 
 ## Tray icon missing (Linux)
 

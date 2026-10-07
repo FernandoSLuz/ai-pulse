@@ -9,13 +9,15 @@ AI Pulse is a local AI model radar for Windows, macOS, and Linux (Omarchy/Hyprla
 
 | OS | Asset | Notes |
 | --- | --- | --- |
-| Windows | `AI-Pulse-Setup-<version>.exe` | NSIS installer, per-user. |
-| macOS (Intel) | `AI-Pulse-<version>-x64.dmg` | DMG installer for Intel Macs. |
-| macOS (Apple Silicon) | `AI-Pulse-<version>-arm64.dmg` | DMG installer for Apple Silicon Macs. |
-| Linux x64 (portable) | `ai-pulse-<version>.AppImage` | Portable; supports in-app updates on systems with FUSE 2. |
-| Linux (Debian/Ubuntu) | `ai-pulse-<version>.deb` | Native x64 package. |
-| Linux (Fedora/RHEL) | `ai-pulse-<version>.rpm` | Native x64 package. |
-| Linux (Arch / Omarchy) | `ai-pulse-<version>.pacman` | Native package. **Final releases only.** |
+| Windows | `AI-Pulse-<version>-Windows-x64-Setup.exe` | NSIS installer, per-user. |
+| macOS (Intel) | `AI-Pulse-<version>-macOS-x64.dmg` | DMG installer for Intel Macs. |
+| macOS (Apple Silicon) | `AI-Pulse-<version>-macOS-arm64.dmg` | DMG installer for Apple Silicon (M-series) Macs. |
+| Linux x64 (portable) | `AI-Pulse-<version>-Linux-x86_64.AppImage` | Portable; supports in-app updates on systems with FUSE 2. |
+| Linux (Debian/Ubuntu) | `AI-Pulse-<version>-Linux-Debian-Ubuntu-amd64.deb` | Native x64 package. |
+| Linux (Fedora/RHEL) | `AI-Pulse-<version>-Linux-Fedora-RHEL-x86_64.rpm` | Native x64 package. |
+| Linux (Arch / Omarchy) | `AI-Pulse-<version>-Linux-Arch-Omarchy-x64.pacman` | Native package. **Final releases only.** |
+
+The filename tells you which build to choose. Most people should use the installer for their system: `.exe` on Windows, `.dmg` on macOS, or the native package for their Linux distribution. On macOS, open **Apple menu → About This Mac**: **Chip Apple M…** means `arm64` (Apple Silicon); **Processor Intel** means `x64`. Source-code archives are for developers. `.blockmap` and `latest*.yml` files are updater metadata, not manual installers. These names apply from v2.0.1 onward; older releases may still use the previous filenames.
 
 > **Note:** Release-candidate and prerelease builds (tags like `v1.0.0-rc.1`) are published on the same Releases page, marked as prereleases. Pick a full release unless you specifically want to test an RC. RCs include Windows, macOS, and Linux x64 AppImage/deb/rpm assets but **no `.pacman`**: pacman turns `1.2.0-rc.1` into `1.2.0_rc.1`, which `vercmp` sorts *above* `1.2.0`, so an installed RC package would block the upgrade to the final release.
 
@@ -39,7 +41,7 @@ runtime for that machine.
 
 ### Windows
 
-Double-click the downloaded `AI-Pulse-Setup-<version>.exe`.
+Double-click the downloaded `AI-Pulse-<version>-Windows-x64-Setup.exe`.
 
 - It uses an **NSIS installer** that installs **per-user** — **no administrator rights required**.
 - It creates **desktop** and **Start-menu** shortcuts.
@@ -54,7 +56,7 @@ The installer is unsigned, so SmartScreen may show a "Windows protected your PC"
 
 ### macOS
 
-Open the DMG matching your Mac (`x64` for Intel or `arm64` for Apple Silicon),
+Open the DMG matching your Mac (`macOS-x64` for Intel or `macOS-arm64` for Apple Silicon),
 then drag **AI Pulse** to Applications. macOS releases are updated by downloading
 the next matching architecture build. The first launch may be blocked because
 the build is unsigned; open **System Settings → Privacy & Security** and choose
@@ -64,8 +66,8 @@ data under the Electron user data directory.
 ### Linux — AppImage (Linux x64)
 
 ```bash
-chmod +x ai-pulse-<version>.AppImage
-./ai-pulse-<version>.AppImage
+chmod +x AI-Pulse-<version>-Linux-x86_64.AppImage
+./AI-Pulse-<version>-Linux-x86_64.AppImage
 ```
 
 - Needs **FUSE 2** to mount itself: `sudo pacman -S fuse2` on Arch/Omarchy (already present on most Omarchy installs).
@@ -74,19 +76,19 @@ chmod +x ai-pulse-<version>.AppImage
 ### Linux — Debian/Ubuntu (`.deb`)
 
 ```bash
-sudo apt install ./ai-pulse-<version>.deb
+sudo apt install ./AI-Pulse-<version>-Linux-Debian-Ubuntu-amd64.deb
 ```
 
 ### Linux — Fedora/RHEL (`.rpm`)
 
 ```bash
-sudo dnf install ./ai-pulse-<version>.rpm
+sudo dnf install ./AI-Pulse-<version>-Linux-Fedora-RHEL-x86_64.rpm
 ```
 
 ### Linux — pacman package (Arch / Omarchy)
 
 ```bash
-sudo pacman -U ./ai-pulse-<version>.pacman
+sudo pacman -U ./AI-Pulse-<version>-Linux-Arch-Omarchy-x64.pacman
 ```
 
 - Installs to `/opt/AI Pulse/ai-pulse` with a system-wide `.desktop` entry and icon, so it shows up in your app launcher.
