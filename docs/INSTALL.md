@@ -9,9 +9,9 @@ AI Pulse is a local AI model radar for Windows, macOS, and Linux (Omarchy/Hyprla
 
 | OS | Asset | Notes |
 | --- | --- | --- |
-| Windows | `AI Pulse-Setup-<version>.exe` | NSIS installer, per-user. |
-| macOS (Intel) | `AI Pulse-<version>-x64.dmg` | DMG installer for Intel Macs. |
-| macOS (Apple Silicon) | `AI Pulse-<version>-arm64.dmg` | DMG installer for Apple Silicon Macs. |
+| Windows | `AI-Pulse-Setup-<version>.exe` | NSIS installer, per-user. |
+| macOS (Intel) | `AI-Pulse-<version>-x64.dmg` | DMG installer for Intel Macs. |
+| macOS (Apple Silicon) | `AI-Pulse-<version>-arm64.dmg` | DMG installer for Apple Silicon Macs. |
 | Linux x64 (portable) | `ai-pulse-<version>.AppImage` | Portable; supports in-app updates on systems with FUSE 2. |
 | Linux (Debian/Ubuntu) | `ai-pulse-<version>.deb` | Native x64 package. |
 | Linux (Fedora/RHEL) | `ai-pulse-<version>.rpm` | Native x64 package. |
@@ -39,7 +39,7 @@ runtime for that machine.
 
 ### Windows
 
-Double-click the downloaded `AI Pulse-Setup-<version>.exe`.
+Double-click the downloaded `AI-Pulse-Setup-<version>.exe`.
 
 - It uses an **NSIS installer** that installs **per-user** — **no administrator rights required**.
 - It creates **desktop** and **Start-menu** shortcuts.

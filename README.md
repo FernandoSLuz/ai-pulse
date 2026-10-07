@@ -16,9 +16,9 @@ It lives in your **system tray**, starts silently on login, keeps itself alive, 
 
    | OS | Asset | Install |
    |----|-------|---------|
-   | **Windows** | `AI Pulse-Setup-<version>.exe` | Run it (per-user install, no admin; adds desktop + Start-menu shortcuts). If Windows SmartScreen warns about an unsigned app, choose **More info → Run anyway**. |
-   | **macOS** (Intel) | `AI Pulse-<version>-x64.dmg` | Open the DMG and drag AI Pulse to Applications. |
-   | **macOS** (Apple Silicon) | `AI Pulse-<version>-arm64.dmg` | Open the DMG and drag AI Pulse to Applications. |
+   | **Windows** | `AI-Pulse-Setup-<version>.exe` | Run it (per-user install, no admin; adds desktop + Start-menu shortcuts). If Windows SmartScreen warns about an unsigned app, choose **More info → Run anyway**. |
+   | **macOS** (Intel) | `AI-Pulse-<version>-x64.dmg` | Open the DMG and drag AI Pulse to Applications. |
+   | **macOS** (Apple Silicon) | `AI-Pulse-<version>-arm64.dmg` | Open the DMG and drag AI Pulse to Applications. |
    | **Linux x64** (portable) | `ai-pulse-<version>.AppImage` | `chmod +x ai-pulse-<version>.AppImage && ./ai-pulse-<version>.AppImage` — needs FUSE 2 (`sudo pacman -S fuse2` on Arch/Omarchy). |
    | **Linux x64** (Debian/Ubuntu) | `ai-pulse-<version>.deb` | `sudo apt install ./ai-pulse-<version>.deb`. |
    | **Linux x64** (Fedora/RHEL) | `ai-pulse-<version>.rpm` | `sudo dnf install ./ai-pulse-<version>.rpm`. |
