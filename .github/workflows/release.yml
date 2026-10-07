@@ -142,6 +142,35 @@ jobs:
           pattern: release-*
           path: release-assets
           merge-multiple: true
+      # electron-builder writes hyphenated URLs into update manifests. GitHub
+      # changes uploaded spaces to dots, so normalize before uploading instead.
+      - name: Normalize asset names and validate update feeds
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          from urllib.parse import unquote
+
+          root = Path("release-assets")
+          for asset in root.iterdir():
+              safe = root / asset.name.replace(" ", "-")
+              if safe == asset:
+                  continue
+              if safe.exists():
+                  raise SystemExit(f"Asset name collision: {safe.name}")
+              asset.rename(safe)
+
+          for name in ("latest.yml", "latest-linux.yml"):
+              manifest = root / name
+              refs = re.findall(r"^\s*(?:-\s*)?(?:url|path):\s*(.+)$", manifest.read_text(), re.M)
+              if not refs:
+                  raise SystemExit(f"No download references in {name}")
+              for ref in refs:
+                  filename = unquote(ref.strip().strip("\"'"))
+                  if Path(filename).name != filename or not (root / filename).is_file():
+                      raise SystemExit(f"Missing asset referenced by {name}: {filename}")
+          print("Release asset names match both update feeds")
+          PY
       - name: Publish all platform assets
         uses: softprops/action-gh-release@v2
         with:
