@@ -4,7 +4,22 @@ const oldFetch = globalThis.fetch;
 const oldToken = process.env.X_API_BEARER_TOKEN;
 process.env.X_API_BEARER_TOKEN = "test-token";
 try {
-  const { fetchXFeed } = await import("../src/social/x.js");
+  const { fetchXFeed, normalizeXHandle } = await import("../src/social/x.js");
+  const validInputs: Array<[string, string]> = [
+    ["sama", "sama"], ["@SamA", "sama"], ["https://x.com/@SamA", "sama"], ["https://x.com/SamA", "sama"],
+    ["https://x.com/SamA?s=21", "sama"], ["https://twitter.com/@SamA?lang=en#bio", "sama"],
+    ["x.com/SamA", "sama"], ["www.twitter.com/@SamA?lang=en", "sama"],
+    ["https://www.twitter.com/SamA/", "sama"], ["http://mobile.x.com/SamA", "sama"],
+  ];
+  for (const [input, expected] of validInputs) {
+    assert.equal(normalizeXHandle(input), expected, `normalizes ${input}`);
+  }
+  for (const input of [
+    "https://evil.example/sama", "https://evil.x.com/sama", "https://x.com.evil/sama",
+    "https://x.com/sama/status/1", "https://x.com/lists/1",
+    "https://x.com/search", "https://user:pass@x.com/sama",
+    "https://x.com:8443/sama", "sama-too-long-handle", "@", "", "https://x.com/%2Fsama",
+  ]) assert.equal(normalizeXHandle(input), null, `rejects ${input}`);
   let calls = 0;
   globalThis.fetch = (async (input: string | URL) => {
     calls++;
@@ -30,6 +45,12 @@ try {
   const failed = await fetchXFeed([{ handle: "openai", name: "OpenAI", profileUrl: "https://x.com/openai", source: "default" }]);
   assert.match(failed.error ?? "", /HTTP 403/);
   assert.doesNotMatch(failed.error ?? "", /sensitive detail/);
+
+  delete process.env.X_API_BEARER_TOKEN;
+  const embedded = await fetchXFeed([{ handle: "openai", name: "OpenAI", profileUrl: "https://x.com/openai", source: "default" }]);
+  assert.equal(embedded.mode, "embed");
+  assert.equal(embedded.error, null);
+  assert.equal(embedded.items.length, 0);
 } finally {
   globalThis.fetch = oldFetch;
   if (oldToken === undefined) delete process.env.X_API_BEARER_TOKEN;

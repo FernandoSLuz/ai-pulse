@@ -4,8 +4,8 @@
  * X does not expose public timelines without an authenticated API project.
  * This module therefore has two explicit modes:
  *  - configured: X_API_BEARER_TOKEN enables the official v2 API;
- *  - links: profile cards remain useful without credentials and never claim
- *    to contain posts.
+ *  - embed: profile cards/timelines remain useful without credentials and
+ *    never claim to contain API posts.
  *
  * Keep persistence and HTTP routing in index/db. The functions here are
  * deliberately side-effect free apart from network requests so a failed X
@@ -35,7 +35,7 @@ export interface XPost {
 }
 
 export interface XFeedResult {
-  mode: "api" | "links";
+  mode: "api" | "embed";
   items: XPost[];
   profiles: XProfile[];
   fetchedAt: string;
@@ -51,6 +51,39 @@ export const DEFAULT_X_PROFILES: readonly XProfile[] = [
   { handle: "OpenAI", name: "OpenAI", profileUrl: "https://x.com/OpenAI", source: "default" },
   { handle: "GoogleDeepMind", name: "Google DeepMind", profileUrl: "https://x.com/GoogleDeepMind", source: "default" },
 ];
+
+const X_PROFILE_HOSTS = new Set(["x.com", "www.x.com", "mobile.x.com", "twitter.com", "www.twitter.com", "mobile.twitter.com"]);
+const X_RESERVED_ROUTES = new Set([
+  "account", "about", "compose", "communities", "download", "explore", "hashtag", "hashtags", "home",
+  "intent", "jobs", "i", "login", "list", "lists", "messages", "notifications", "privacy", "search",
+  "settings", "share", "signup", "status", "terms", "tos",
+]);
+
+/** Normalize a user supplied X handle or profile URL to the DB handle form. */
+export function normalizeXHandle(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const input = value.trim();
+  if (!input) return null;
+  if (!/^[a-z0-9_@]+$/i.test(input) && !/^https?:\/\//i.test(input) && !/^(?:(?:www|mobile)\.)?(?:x|twitter)\.com\//i.test(input)) return null;
+  if (!/^https?:\/\//i.test(input) && !/^(?:(?:www|mobile)\.)?(?:x|twitter)\.com\//i.test(input)) {
+    const handle = input.replace(/^@/, "");
+    return /^[a-z0-9_]{1,15}$/i.test(handle) ? handle.toLowerCase() : null;
+  }
+
+  let url: URL;
+  try { url = new URL(/^https?:\/\//i.test(input) ? input : "https://" + input); } catch { return null; }
+  const host = url.hostname.toLowerCase();
+  if (!X_PROFILE_HOSTS.has(host) || url.username || url.password) return null;
+  const expectedPort = url.protocol === "https:" ? "443" : "80";
+  if (url.port && url.port !== expectedPort) return null;
+  const parts = url.pathname.split("/").filter(Boolean);
+  if (parts.length !== 1) return null;
+  let handle: string;
+  try { handle = decodeURIComponent(parts[0]); } catch { return null; }
+  handle = handle.replace(/^@/, "");
+  if (X_RESERVED_ROUTES.has(handle.toLowerCase())) return null;
+  return /^[a-z0-9_]{1,15}$/i.test(handle) ? handle.toLowerCase() : null;
+}
 
 function bearerToken(): string | undefined {
   const value = process.env.X_API_BEARER_TOKEN?.trim();
@@ -104,7 +137,7 @@ export async function fetchXFeed(profiles: XProfile[], maxPostsPerProfile = 10):
   const fetchedAt = new Date().toISOString();
   const selected = uniqueProfiles(profiles);
   if (!bearerToken()) {
-    return { mode: "links", items: [], profiles: selected, fetchedAt, error: "X API is not configured; showing profile links only" };
+    return { mode: "embed", items: [], profiles: selected, fetchedAt, error: null };
   }
 
   try {

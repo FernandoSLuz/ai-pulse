@@ -38,10 +38,12 @@ The response includes full **analyst provider status** plus the **last outcome**
 Because the outcome is persisted and reported, a degraded state is always visible rather than hidden.
 
 No AI provider key is required. Optional `AA_API_KEY` enriches benchmark records,
-`TAVILY_API_KEY` enables web search, and `X_API_BEARER_TOKEN` fetches official X
-posts. None of these integrations supplies a model or is used as a fallback:
-inference is local-only, and a missing model uses deterministic rules rather than
-an online model.
+`TAVILY_API_KEY` enables web search, and `X_API_BEARER_TOKEN` enables the
+optional official X API feed. X's default embedded profile view needs no token,
+although protected or login-required profiles may be restricted by X. None of
+these integrations supplies a model or is used as a fallback: inference is
+local-only, and a missing model uses deterministic rules rather than an online
+model.
 
 ### Benchmark data
 

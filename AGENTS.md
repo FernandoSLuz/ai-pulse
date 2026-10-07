@@ -46,6 +46,8 @@ Fonte única: `README.md` + `docs/ARCHITECTURE.md` + `docs/CONFIGURATION.md` +
 - Toda URL de feed nova: verificar por GET (200 + parseia RSS/Atom + item ≤90 dias) antes de
   entrar no `sources.json`. `channelId` de YouTube: extrair de `youtube.com/@handle`
   (`"externalId":"UC…"`), nunca chutar.
+- X social: o modo padrão sem token é `embed`, com perfis oficiais pré-selecionados; entradas aceitam username, `@username` e URLs de perfil `x.com`/`twitter.com`. `X_API_BEARER_TOKEN` é apenas o feed oficial opcional. Perfis protegidos ou que exigem login podem ser restringidos pelo X.
+- YouTube: `Videos → Add channel` aceita username, `@username`, URL de canal ou channel ID; o usuário escolhe Creators/Companies, a seleção fica no SQLite e o RSS público deve ser validado com item nos últimos 90 dias. O mesmo channel identity não pode estar nos dois kinds no schema atual.
 - Migração de banco: padrão `migrateNewsColumns`/`migrateVideoColumns`
   (`PRAGMA table_info` + `ALTER TABLE ADD COLUMN` condicional). Nunca apagar/recriar o banco.
 - better-sqlite3 >= 13 (raiz, hoisted) é N-API: um único binário serve Node e Electron.

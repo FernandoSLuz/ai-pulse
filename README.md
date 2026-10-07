@@ -42,7 +42,7 @@ The published desktop builds currently cover Windows x64, macOS Intel and Apple 
 - **Benchmark sources** — switch between Artificial Analysis, LiveBench, and SWE-bench Verified without API tokens. Each keeps its own scores and methodology. Artificial Analysis includes prices, speed, and evidence-backed access labels, with all tested configurations shown by default and an optional best-per-model view.
 - **AI Analyst** — a briefing on new models, leader changes, and big news.
 - **Ask AI Pulse** — local chat with optional Tavily web search.
-- **Social posts** — official AI accounts when `X_API_BEARER_TOKEN` is configured; without it, profiles remain useful links and no token is needed.
+- **X / Twitter** — a no-token embedded profile view is the default, preselected with official AI accounts. Add a username, `@username`, or an `x.com`/`twitter.com` profile URL; X may still restrict embeds for protected or login-required accounts. The optional `X_API_BEARER_TOKEN` adds the separate official API feed.
 - **My Stack** — track your current model and get upgrade suggestions when something better lands.
 - **Desktop leaderboard** — on Windows an always-on-top widget docked to your screen edge; on Omarchy a **bar panel**: click the AI Pulse entry in the bar and the leaderboard drops down like the other Omarchy panels (Esc closes, nothing else moves). The floating window remains available in Settings.
 - **Notifications** — desktop notifications (Windows toasts; `notify-send`/libnotify on Linux) for new models, leader changes, and upgrade suggestions.

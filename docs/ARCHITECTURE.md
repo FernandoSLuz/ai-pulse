@@ -105,7 +105,7 @@ flowchart TD
 
 A **poll cycle** moves data from the outside world into SQLite, decides what changed, and pushes updates to any connected clients:
 
-1. **Fetch.** Pull the latest benchmarks (Artificial Analysis), news (RSS), and videos (YouTube creators + companies).
+1. **Fetch.** Pull the latest benchmarks (Artificial Analysis), news (RSS), and videos (YouTube creators + companies). X profiles are embedded by the dashboard without a token; the optional X API feed is fetched separately when configured.
 2. **Upsert.** Write the fetched records into SQLite.
 3. **Detect changes.** Compare against what's already stored to find new models, leader changes, breaking news, and other deltas.
 4. **Run the analyst.** The **LLM router** (see below) curates and produces briefings/analysis for the changes.
@@ -184,6 +184,21 @@ Each `VideoItem` has `kind: "creator" | "company"` (absent = creator). `migrateV
 The WebSocket payload `{type:"videos"}` keeps `items` as creators and adds `companyItems` for the Companies panel. Do not rename those fields.
 
 Company channels live in `config/sources.json` as `companyChannels` (same shape as `youtubeChannels`). They are polled alongside creators; a company-fetch failure must not block creator persist/broadcast.
+
+The dashboard can add a YouTube channel by username, `@username`, public
+channel URL, or channel ID. The selected `creator`/`company` kind is persisted
+in SQLite after the public RSS feed is validated, including the requirement for
+an item from the last 90 days. The current schema permits one kind per channel
+identity, so the same channel cannot be assigned to both panels.
+
+### X / Twitter integration
+
+The default social mode is `embed`: the dashboard uses X's public embedded
+profile view and requires no API token. Input is normalized from a username,
+`@username`, or an `x.com`/`twitter.com` profile URL. X can restrict protected
+or login-required profiles, so embed mode does not guarantee post visibility.
+When `X_API_BEARER_TOKEN` is configured, `api` mode fetches the official feed as
+a separate optional path; it does not replace or enable local AI inference.
 
 ## Variant collapse (presentation only)
 

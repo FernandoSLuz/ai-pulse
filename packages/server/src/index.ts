@@ -31,7 +31,7 @@ import { fetchAaPublicSiteModels } from "./fetchers/aa-public-site.js";
 import { mergeBenchmarkModels } from "./fetchers/merge-models.js";
 import { enrichAccessibility } from "./fetchers/huggingface-access.js";
 import { fetchAllNews } from "./fetchers/rss-aggregator.js";
-import { fetchCreatorVideos, fetchCompanyVideos, getVideoFetchHealth } from "./fetchers/youtube-channels.js";
+import { fetchCreatorVideos, fetchCompanyVideos, getConfiguredYouTubeChannels, getVideoFetchHealth } from "./fetchers/youtube-channels.js";
 import { buildRankingsSnapshot, detectLeaderChanges } from "./rankings.js";
 import { evaluatePollHealth, recordSuccessfulPoll } from "./poll-health.js";
 import {
@@ -61,6 +61,7 @@ import { isNewsPeriod } from "./types.js";
 import { getLocalAIStatus, initializeLocalAI, setupLocalAI, cancelLocalAISetup, stopLocalAI, LOCAL_AI_MODELS, runtimeSpec } from "./local-ai/index.js";
 import { registerSocialRoutes, initializeSocialPolling, stopSocialPolling } from "./social/routes.js";
 import { getPublicBenchmarks, refreshPublicBenchmarks, startPublicBenchmarkPolling, stopPublicBenchmarkPolling } from "./benchmarks/public-sources.js";
+import { registerYouTubeChannelRoutes } from "./youtube/routes.js";
 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -133,6 +134,29 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.json());
+
+// The X timeline is deliberately isolated in its own document. Keep its CSP
+// separate from the dashboard so the third-party widget never gains access to
+// the local API or the parent application's scripts.
+app.get("/x-embed.html", (_req, res) => {
+  res.set({
+    "Content-Security-Policy": [
+      "default-src 'none'",
+      "base-uri 'none'",
+      "form-action 'none'",
+      "script-src 'self' https://platform.twitter.com",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src https://*.twimg.com https://*.x.com data:",
+      "font-src https://*.twimg.com data:",
+      "frame-src https://platform.twitter.com https://syndication.twitter.com",
+      "child-src https://platform.twitter.com https://syndication.twitter.com",
+      "connect-src https://platform.twitter.com https://syndication.twitter.com https://cdn.syndication.twimg.com https://api.x.com https://x.com",
+      "sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox",
+    ].join("; "),
+    "Cache-Control": "no-store",
+  });
+  res.sendFile(path.join(webRoot, "x-embed.html"));
+});
 app.use(express.static(webRoot));
 
 const server = http.createServer(app);
@@ -212,6 +236,7 @@ app.post("/api/local-ai/cancel", (_req, res) => {
   res.json(localAIResponse());
 });
 registerSocialRoutes(app);
+registerYouTubeChannelRoutes(app);
 
 app.get("/api/health", (_req, res) => {
   const health = evaluatePollHealth(AA_POLL);
@@ -675,8 +700,14 @@ async function pollVideos(): Promise<void> {
     const companyVideos = companiesResult.status === "fulfilled" ? companiesResult.value : [];
     if (creatorsResult.status === "rejected" && companiesResult.status === "rejected") return;
 
-    const newCreatorVideos = upsertVideos(creatorVideos);
-    const newCompanyVideos = upsertVideos(companyVideos);
+    const activeVideoItems = (items: typeof creatorVideos, kind: "creator" | "company") => {
+      const active = getConfiguredYouTubeChannels(kind);
+      return items.filter((item) => active.some((channel) => item.channelHandle === channel.handle || item.channelHandle === channel.channelId));
+    };
+    // A channel may be removed while Promise.allSettled waits for the other
+    // kind. Recheck subscriptions immediately before touching SQLite.
+    const newCreatorVideos = upsertVideos(activeVideoItems(creatorVideos, "creator"));
+    const newCompanyVideos = upsertVideos(activeVideoItems(companyVideos, "company"));
     const videoStates = [getVideoFetchHealth("creator"), getVideoFetchHealth("company")].flat().filter(Boolean);
     if (videoStates.some((health) => health && health.succeeded > 0)) {
       setMeta("videos_last_poll", new Date().toISOString());

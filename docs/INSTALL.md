@@ -122,7 +122,13 @@ No AI provider key is required. In **Connections**, optionally configure:
 
 - `AA_API_KEY` for benchmark enrichment (public rankings work without it);
 - `TAVILY_API_KEY` for web search only;
-- `X_API_BEARER_TOKEN` for official X posts. Without it, people profiles remain links.
+- `X_API_BEARER_TOKEN` for the optional official X API feed. Without it, the X view uses embedded profiles and accepts usernames, `@usernames`, and `x.com`/`twitter.com` profile URLs. Protected or login-required profiles may be restricted by X.
+
+In **Videos → Add channel**, enter a YouTube username, `@username`, channel URL,
+or channel ID, then choose **Creators** or **Companies**. AI Pulse validates the
+public RSS feed and stores the selection locally; no YouTube API key is needed.
+The feed must include an item from the last 90 days. A channel cannot currently
+be assigned to both kinds.
 
 ## 4. Running in the tray & auto-start
 

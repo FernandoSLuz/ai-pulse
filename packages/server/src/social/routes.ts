@@ -3,7 +3,7 @@ import {
   deleteSocialProfile, getSocialPosts, getSocialProfiles, replaceSocialPosts, upsertSocialProfiles,
 } from "../db.js";
 import { getMeta, setMeta } from "../db.js";
-import { DEFAULT_X_PROFILES, fetchXFeed, type XProfile } from "./x.js";
+import { DEFAULT_X_PROFILES, fetchXFeed, normalizeXHandle, type XProfile } from "./x.js";
 import type { SocialProfile } from "../types.js";
 
 const MAX_PROFILES = 30;
@@ -15,7 +15,7 @@ let lastAttemptAt: string | null = null;
 let updatedAt: string | null = null;
 let lastError: string | null = null;
 let lastRefreshMs = 0;
-let lastMode: "api" | "links" = process.env.X_API_BEARER_TOKEN?.trim() ? "api" : "links";
+let lastMode: "api" | "embed" = process.env.X_API_BEARER_TOKEN?.trim() ? "api" : "embed";
 
 const SOCIAL_ATTEMPT_KEY = "social_last_attempt_at";
 const SOCIAL_UPDATED_KEY = "social_updated_at";
@@ -23,16 +23,11 @@ const SOCIAL_UPDATED_KEY = "social_updated_at";
 export interface SocialState {
   items: ReturnType<typeof getSocialPosts>;
   profiles: SocialProfile[];
-  mode: "api" | "links";
+  mode: "api" | "embed";
   updatedAt: string | null;
   lastAttemptAt: string | null;
   error: string | null;
   configured: boolean;
-}
-
-function normalizeHandle(value: unknown): string | null {
-  const handle = String(value ?? "").trim().replace(/^@/, "");
-  return /^[A-Za-z0-9_]{1,15}$/.test(handle) ? handle : null;
 }
 
 function profileFromInput(handle: string, name?: string): SocialProfile {
@@ -49,7 +44,9 @@ function ensureDefaults(): SocialProfile[] {
 }
 
 function state(): SocialState {
-  return { items: getSocialPosts(), profiles: ensureDefaults(), mode: lastMode, updatedAt: updatedAt ?? getMeta(SOCIAL_UPDATED_KEY), lastAttemptAt: lastAttemptAt ?? getMeta(SOCIAL_ATTEMPT_KEY), error: lastError, configured: Boolean(process.env.X_API_BEARER_TOKEN?.trim()) };
+  // API posts are never presented as current while the app is in embed mode.
+  // The rows remain cached for a later re-authenticated API refresh.
+  return { items: lastMode === "api" ? getSocialPosts() : [], profiles: ensureDefaults(), mode: lastMode, updatedAt: lastMode === "api" ? (updatedAt ?? getMeta(SOCIAL_UPDATED_KEY)) : null, lastAttemptAt: lastAttemptAt ?? getMeta(SOCIAL_ATTEMPT_KEY), error: lastError, configured: Boolean(process.env.X_API_BEARER_TOKEN?.trim()) };
 }
 
 export async function refreshSocial(_force = false): Promise<SocialState> {
@@ -70,7 +67,7 @@ export async function refreshSocial(_force = false): Promise<SocialState> {
     }
     lastMode = result.mode;
     if (result.items.length) replaceSocialPosts(result.items.map((p) => ({ ...p })));
-    if (!result.error) {
+    if (!result.error && result.mode === "api") {
       updatedAt = result.fetchedAt;
       setMeta(SOCIAL_UPDATED_KEY, updatedAt);
     }
@@ -85,15 +82,15 @@ export async function refreshSocial(_force = false): Promise<SocialState> {
 export function registerSocialRoutes(app: Express): void {
   app.get("/api/social", (_req, res) => res.json(state()));
   app.post("/api/social/profiles", async (req: Request, res: Response) => {
-    const handle = normalizeHandle(req.body?.handle);
+    const handle = normalizeXHandle(req.body?.handle);
     if (!handle) return res.status(400).json({ error: "Invalid X handle" });
     const current = ensureDefaults();
     if (current.length >= MAX_PROFILES && !current.some((p) => p.handle.toLowerCase() === handle.toLowerCase())) return res.status(400).json({ error: `You can follow up to ${MAX_PROFILES} profiles` });
     if (!current.some((p) => p.handle.toLowerCase() === handle.toLowerCase())) upsertSocialProfiles([...current, profileFromInput(handle, req.body?.name)]);
-    return res.status(201).json(state());
+    return res.status(201).json({ ...state(), addedHandle: handle });
   });
   app.delete("/api/social/profiles/:handle", (req, res) => {
-    const handle = normalizeHandle(req.params.handle);
+    const handle = normalizeXHandle(req.params.handle);
     if (!handle) return res.status(400).json({ error: "Invalid X handle" });
     if (!deleteSocialProfile(handle)) return res.status(404).json({ error: "Profile not found" });
     return res.json(state());

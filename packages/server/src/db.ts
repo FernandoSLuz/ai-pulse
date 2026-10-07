@@ -145,6 +145,16 @@ function initSchema(database: Database.Database): void {
       fetched_at TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS youtube_user_channels (
+      channel_id TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK (kind IN ('creator', 'company')),
+      name TEXT NOT NULL,
+      handle TEXT NOT NULL DEFAULT '',
+      channel_url TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (channel_id, kind)
+    );
+
     CREATE TABLE IF NOT EXISTS social_profiles (
       handle TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -622,6 +632,55 @@ export function getVideos(limit = 40, kind: "creator" | "company" | "all" = "cre
     fetchedAt: (row.fetched_at as string) ?? "",
     kind: (row.kind as VideoItem["kind"]) ?? "creator",
   }));
+}
+
+export interface YouTubeUserChannel {
+  channelId: string;
+  kind: "creator" | "company";
+  name: string;
+  handle: string;
+  channelUrl: string;
+  source: "user";
+}
+
+export function getYouTubeUserChannels(kind?: "creator" | "company"): YouTubeUserChannel[] {
+  const rows = (kind
+    ? getDb().prepare("SELECT * FROM youtube_user_channels WHERE kind = ? ORDER BY name COLLATE NOCASE").all(kind)
+    : getDb().prepare("SELECT * FROM youtube_user_channels ORDER BY name COLLATE NOCASE").all()) as Record<string, unknown>[];
+  return rows.map((row) => ({
+    channelId: String(row.channel_id),
+    kind: row.kind === "company" ? "company" : "creator",
+    name: String(row.name),
+    handle: String(row.handle ?? ""),
+    channelUrl: String(row.channel_url),
+    source: "user",
+  }));
+}
+
+export function saveYouTubeUserChannel(channel: Omit<YouTubeUserChannel, "source">): YouTubeUserChannel {
+  getDb().prepare(`
+    INSERT INTO youtube_user_channels (channel_id, kind, name, handle, channel_url, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(channel_id, kind) DO UPDATE SET name = excluded.name, handle = excluded.handle, channel_url = excluded.channel_url
+  `).run(channel.channelId, channel.kind, channel.name, channel.handle, channel.channelUrl, new Date().toISOString());
+  return { ...channel, source: "user" };
+}
+
+export function deleteYouTubeUserChannel(channelId: string, kind: "creator" | "company"): boolean {
+  return getDb().prepare("DELETE FROM youtube_user_channels WHERE channel_id = ? AND kind = ?").run(channelId, kind).changes > 0;
+}
+
+export function deleteYouTubeVideos(channelId: string, handle: string, kind: "creator" | "company"): void {
+  const database = getDb();
+  // Current rows carry the canonical handle; the link fallback covers rows
+  // imported before the channel metadata table existed.
+  database.prepare("DELETE FROM videos WHERE kind = ? AND (channel_handle = ? OR channel_handle = ? OR channel_handle = ? OR link LIKE ?)").run(
+    kind,
+    handle.replace(/^@/, ""),
+    handle.startsWith("@") ? handle : `@${handle}`,
+    channelId,
+    `%/channel/${channelId}%`,
+  );
 }
 
 const NOTIFY_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;

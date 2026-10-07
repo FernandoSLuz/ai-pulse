@@ -5,7 +5,7 @@ const api = window.aiPulse;
 const KEY_META = {
   AA_API_KEY: { label: "Artificial Analysis", role: "Benchmark enrichment", hint: "Public rankings already work without a key", url: "https://artificialanalysis.ai/insights" },
   TAVILY_API_KEY: { label: "Tavily", role: "Optional web search", hint: "Search queries go to Tavily when requested", url: "https://app.tavily.com" },
-  X_API_BEARER_TOKEN: { label: "X / Twitter", role: "Posts from followed profiles", hint: "Requires an X developer project with API access", url: "https://console.x.com" },
+  X_API_BEARER_TOKEN: { label: "X API feed (optional)", role: "Combined feed from saved profiles", hint: "Profile timelines work without a key. Only the optional API feed needs an X developer project.", url: "https://console.x.com" },
 };
 
 let state = null;

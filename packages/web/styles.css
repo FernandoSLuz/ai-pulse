@@ -1042,7 +1042,7 @@ body[data-view="news"] .aipick-panel { grid-column: span 1; }
 .pager button:disabled { opacity: .4; cursor: default; }
 .social-add-form { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px; margin-bottom: 10px; border: 1px solid var(--border); border-radius: 8px; background: rgba(0,0,0,.12); }
 .social-add-form label { color: var(--muted); font-size: .78rem; }
-.social-add-form input { width: 180px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
+.social-add-form input { width: min(360px, 100%); min-width: 0; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
 .social-add-form input:focus { outline: 2px solid var(--accent-dim); outline-offset: 1px; }
 .form-error { color: var(--danger); font-size: .75rem; flex-basis: 100%; }
 .profile-pill-wrap { display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: 999px; background: var(--bg); }
@@ -1050,6 +1050,27 @@ body[data-view="news"] .aipick-panel { grid-column: span 1; }
 .profile-remove { border: 0; background: transparent; color: var(--muted); cursor: pointer; padding: 3px 8px 3px 0; font-size: 1rem; }
 .profile-remove:hover { color: var(--danger); }
 .social-status { margin: 5px 0 2px; min-height: 1em; color: var(--gold); }
+.social-status.has-error { color: var(--danger); }
+.x-timeline { grid-column: 1 / -1; min-width: 0; }
+.x-timeline-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.x-timeline-heading > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+.x-timeline-heading .muted, #x-embed-status, .x-embed-note { font-size: .78rem; }
+#x-embed-status { margin: 8px 0; }
+#x-timeline-frame { display: block; width: 100%; border: 1px solid var(--border); border-radius: 10px; background: #15202b; }
+.x-embed-note { margin: 10px 0 0; line-height: 1.5; }
+.x-embed-note a { color: var(--accent); white-space: nowrap; }
+.video-management { margin-bottom: 14px; }
+.video-management .panel-header { gap: 12px; flex-wrap: wrap; }
+.video-management .panel-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.video-management select { border: 1px solid var(--border); border-radius: 6px; padding: 8px; background: var(--bg); color: var(--text); font: inherit; }
+.video-channel-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.video-channel-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
+.video-channel-row a { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.video-channel-row strong { font-size: .84rem; }
+.video-channel-row .muted { font-size: .75rem; }
+.video-channel-row button { flex-shrink: 0; }
+#social-api-feed[hidden] { display: none; }
+@media (max-width: 640px) { .video-channel-list { grid-template-columns: 1fr; } }
 /* Tab views should let the page breathe; only the benchmark table keeps a bounded viewport. */
 .news-feed, .creators-feed { max-height: none; overflow: visible; }
 
