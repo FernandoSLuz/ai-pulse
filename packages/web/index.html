@@ -130,7 +130,7 @@
           <div><h2>Benchmark Leaderboard</h2><span id="rankings-updated" class="muted"></span></div>
           <button type="button" id="refresh-rankings" class="btn btn-ghost">Refresh benchmarks</button>
         </div>
-        <div class="benchmark-tools"><label class="search-field"><span class="sr-only">Search models</span><input id="benchmark-search" type="search" placeholder="Search model or creator…" /></label><div class="segmented" role="tablist" aria-label="Model access"><button type="button" class="segment active" data-access-filter="all">All</button><button type="button" class="segment" data-access-filter="open">Open access</button></div></div>
+        <div class="benchmark-tools"><label class="search-field"><span class="sr-only">Search models</span><input id="benchmark-search" type="search" placeholder="Search model or creator…" /></label><div class="segmented" role="tablist" aria-label="Benchmark view"><button type="button" class="segment active" data-benchmark-view="tested">All tested</button><button type="button" class="segment" data-benchmark-view="best">Best per model</button></div><div class="segmented" role="tablist" aria-label="Model access"><button type="button" class="segment active" data-access-filter="all">All</button><button type="button" class="segment" data-access-filter="open">Open access</button></div></div>
         <div class="table-wrap">
           <table id="rankings-table">
             <thead>
@@ -138,7 +138,7 @@
                 <th>#</th>
                 <th class="sortable" data-sort="name">Model</th>
                 <th class="sortable" data-sort="creator">Creator</th>
-                <th class="sortable" data-sort="intelligence">Intel</th>
+                <th class="sortable" data-sort="intelligence">AA Intelligence Index</th>
                 <th class="sortable" data-sort="coding">Code</th>
                 <th class="sortable" data-sort="math">Math</th>
                 <th class="sortable" data-sort="priceBlended" title="USD per 1M tokens · input / output · blended = 3:1 input/output">$/1M in / out</th>
@@ -153,7 +153,8 @@
         <div class="pager" id="rankings-pager"></div>
         <p class="attribution">
           Benchmark data from <a href="https://artificialanalysis.ai/leaderboards/models" target="_blank" rel="noopener">Artificial Analysis</a>
-          (free API + public leaderboard). A dash means Artificial Analysis did not publish that metric for the model.
+          (free API + public leaderboard). <a href="https://artificialanalysis.ai/methodology" target="_blank" rel="noopener">Read the current methodology</a>.
+          The AA Intelligence Index is a weighted evaluation of published tests, not a consensus score; small gaps do not prove superiority. A dash means Artificial Analysis did not publish that metric for the model.
         </p>
       </section>
     </div>

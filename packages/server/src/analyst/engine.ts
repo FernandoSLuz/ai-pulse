@@ -51,7 +51,7 @@ function recordOutcome(result: LlmResult | null): void {
 }
 
 function isPickList(value: unknown): boolean {
-  return Array.isArray(value) && value.every((item) => item && typeof item === "object" && typeof (item as { id?: unknown }).id === "string");
+  return Array.isArray(value) && value.every((item) => typeof item === "string" || (item && typeof item === "object" && typeof (item as { id?: unknown }).id === "string"));
 }
 
 function hasBriefingShape(data: Record<string, unknown>): boolean {
@@ -131,8 +131,11 @@ function normalizePicks(
 ): { id: string; reason: string }[] {
   if (!Array.isArray(raw)) return buildRulesAiPicks(candidates);
   if (raw.length === 0) return [];
-  const picks = (raw as { id?: string; reason?: string }[])
-      .map((p) => ({ ...p, id: p.id ? (aliases?.get(String(p.id)) ?? String(p.id)) : "" }))
+  const picks = (raw as (string | { id?: string; reason?: string })[])
+      .map((p) => {
+        const id = typeof p === "string" ? p : p.id;
+        return { id: id ? (aliases?.get(String(id)) ?? String(id)) : "" };
+      })
       .filter((p) => p.id && idSet.has(p.id))
       .map((p) => {
         const candidate = candidates.find((item) => item.id === p.id);

@@ -20,6 +20,7 @@ let state = {
   social: { profiles: [], posts: [] },
   pages: { news: 1, aipicks: 1, creators: 1, companies: 1, rankings: 1, social: 1 },
   benchmarkQuery: "",
+  benchmarkView: "tested",
   benchmarkAccess: "all",
   videoKind: "creator",
 };
@@ -67,7 +68,7 @@ function setView(view) {
 const SORTABLE = {
   name: { key: "name", type: "string", defaultDir: "asc", label: "Model" },
   creator: { key: "creator", type: "string", defaultDir: "asc", label: "Creator" },
-  intelligence: { key: "intelligence", type: "number", defaultDir: "desc", label: "Intel" },
+  intelligence: { key: "intelligence", type: "number", defaultDir: "desc", label: "AA Intelligence Index" },
   coding: { key: "coding", type: "number", defaultDir: "desc", label: "Code" },
   math: { key: "math", type: "number", defaultDir: "desc", label: "Math" },
   priceBlended: { key: "priceBlended", type: "number", defaultDir: "asc", label: "$/1M in/out" },
@@ -227,8 +228,8 @@ function resolveSlug(slug) {
 
 function variantHoverTitle(model) {
   const variants = model?.variants ?? [];
-  if (!variants.length) return "";
-  return `+${variants.length} variantes: ${variants.map((v) => v.name).join(", ")}`;
+  const exact = model?.name ? `Exact benchmark configuration: ${model.name}` : "Exact benchmark configuration";
+  return variants.length ? `${exact} · ${variants.length} related variant${variants.length === 1 ? "" : "s"}: ${variants.map((v) => v.name).join(", ")}` : exact;
 }
 
 function renderStackSummary() {
@@ -580,11 +581,17 @@ function winnerBadges(slug, winners) {
   return badges.join("");
 }
 
+function benchmarkRows(snapshot) {
+  if (state.benchmarkView === "best") return Array.isArray(snapshot.models) ? snapshot.models : [];
+  return Array.isArray(snapshot.testedModels) ? snapshot.testedModels : (Array.isArray(snapshot.models) ? snapshot.models : []);
+}
+
 function renderRankings() {
   const r = state.rankings;
   const tbody = document.querySelector("#rankings-table tbody");
   const updated = document.getElementById("rankings-updated");
-  if (!r?.models?.length) {
+  const rows = r ? benchmarkRows(r) : [];
+  if (!rows.length) {
     document.getElementById("rankings-pager").innerHTML = "";
     tbody.innerHTML = `<tr><td colspan="10" class="muted">Loading benchmarks…</td></tr>`;
     return;
@@ -596,7 +603,7 @@ function renderRankings() {
   updated.classList.toggle("stale-warning", Boolean(r.health?.stale));
   const mine = resolveSlug(state.stack?.primaryModelSlug);
   const query = state.benchmarkQuery.trim().toLowerCase();
-  const filtered = r.models.filter((m) => {
+  const filtered = rows.filter((m) => {
     const matchesQuery = !query || `${m.name} ${m.displayName || ""} ${m.creator}`.toLowerCase().includes(query);
     const matchesAccess = state.benchmarkAccess !== "open" || /open weights|open source/i.test(String(m.accessibility || ""));
     return matchesQuery && matchesAccess;
@@ -609,8 +616,11 @@ function renderRankings() {
       i === 0 ? "row-gold" : "",
       m.slug === mine ? "row-mine" : "",
     ].filter(Boolean).join(" ");
-    const shownName = m.displayName ?? m.name;
+    const shownName = m.name ?? m.displayName;
     const hover = variantHoverTitle(m);
+    const winners = state.benchmarkView === "best" ? r.winners : (r.testedWinners ?? r.winners);
+    const badges = winnerBadges(m.slug, winners);
+    const bestBadge = state.benchmarkView === "best" && badges ? '<span class="badge">Best reported</span>' : "";
     return `<tr class="${cls}">
       <td>${pageStart + i + 1}</td>
       <td class="${state.sortKey === "name" ? "col-sort-active" : ""}" ${hover ? `title="${escapeHtml(hover)}"` : ""}>${safeLink(m.url) ? `<a href="${escapeHtml(safeLink(m.url))}" target="_blank" rel="noopener">${escapeHtml(shownName)}</a>` : escapeHtml(shownName)}</td>
@@ -621,7 +631,7 @@ function renderRankings() {
       <td class="${state.sortKey === "priceBlended" ? "col-sort-active" : ""}">${priceCell(m)}</td>
       <td class="${state.sortKey === "speed" ? "col-sort-active" : ""}">${fmtMetric(m.speed)}</td>
       <td class="${state.sortKey === "accessibilityScore" ? "col-sort-active" : ""}"><span>${escapeHtml(m.accessibility || "Unknown")}</span>${m.licenseUrl && safeLink(m.licenseUrl) ? ` · <a href="${escapeHtml(safeLink(m.licenseUrl))}" target="_blank" rel="noopener">license</a>` : ""}${m.weightsUrl && safeLink(m.weightsUrl) ? ` · <a href="${escapeHtml(safeLink(m.weightsUrl))}" target="_blank" rel="noopener">weights</a>` : ""}</td>
-      <td>${winnerBadges(m.slug, r.winners)}</td>
+      <td>${badges}${bestBadge}</td>
     </tr>`;
   }).join("");
   renderPager("rankings-pager", "rankings", sorted.length);
@@ -1075,6 +1085,7 @@ async function refreshResource(buttonId, endpoint, loaders) {
 document.getElementById("refresh-rankings")?.addEventListener("click", () => refreshResource("refresh-rankings", "/api/rankings/refresh", [async () => { state.rankings = await fetchJson("/api/rankings"); renderRankings(); }]));
 document.getElementById("refresh-videos")?.addEventListener("click", () => refreshResource("refresh-videos", "/api/videos/refresh", [loadVideos, loadCompanyVideos]));
 document.getElementById("benchmark-search")?.addEventListener("input", (event) => { state.benchmarkQuery = event.target.value; state.pages.rankings = 1; renderRankings(); });
+document.querySelectorAll("[data-benchmark-view]").forEach((button) => button.addEventListener("click", () => { document.querySelectorAll("[data-benchmark-view]").forEach((b) => b.classList.remove("active")); button.classList.add("active"); state.benchmarkView = button.dataset.benchmarkView; state.pages.rankings = 1; renderRankings(); }));
 document.querySelectorAll("[data-access-filter]").forEach((button) => button.addEventListener("click", () => { document.querySelectorAll("[data-access-filter]").forEach((b) => b.classList.remove("active")); button.classList.add("active"); state.benchmarkAccess = button.dataset.accessFilter; state.pages.rankings = 1; renderRankings(); }));
 document.querySelectorAll("[data-video-kind]").forEach((button) => button.addEventListener("click", () => { document.querySelectorAll("[data-video-kind]").forEach((b) => b.classList.remove("active")); button.classList.add("active"); state.videoKind = button.dataset.videoKind; document.querySelector(".creators-panel")?.classList.toggle("hidden", state.videoKind !== "creator"); document.querySelector(".companies-panel")?.classList.toggle("hidden", state.videoKind !== "company"); document.querySelector(".companies-panel")?.classList.toggle("show-company", state.videoKind === "company"); }));
 

@@ -93,6 +93,9 @@ export interface CategoryWinners {
 export interface RankingsSnapshot {
   models: ModelRecord[];
   winners: CategoryWinners;
+  /** Exact tested configurations, before optional presentation grouping. */
+  testedModels?: ModelRecord[];
+  testedWinners?: CategoryWinners;
   updatedAt: string | null;
   variantAliases?: Record<string, string>;
   variantsCollapsed?: number;

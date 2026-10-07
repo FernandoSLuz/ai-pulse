@@ -136,7 +136,10 @@ function indexSiteRows(payload: string): { metrics: Map<string, AaSiteRow>; meta
 function joinRow(metric: AaSiteRow, meta: AaSiteRow | undefined): AaSiteRow {
   return {
     ...metric,
-    name: meta?.name ?? metric.shortName,
+    // Metric objects carry the exact effort/setting label. Metadata often
+    // contains only the base family name; preferring it would make variants
+    // look identical before the presentation-only collapse step.
+    name: metric.name ?? metric.shortName ?? meta?.name,
     creator: meta?.creator ?? null,
     modelCreatorName: meta?.creator?.name ?? metric.modelCreatorName,
     deprecated: meta?.deprecated === true || metric.deprecated === true,

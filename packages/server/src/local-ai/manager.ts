@@ -144,6 +144,9 @@ async function download(url: string, destination: string, sha: string, expectedS
 
 async function runtimeFiles(root: string, signal?: AbortSignal): Promise<string[]> {
   const files: string[] = [];
+  // macOS /var is itself a symlink to /private/var. Compare canonical paths
+  // on both sides so legitimate internal dylib links are accepted.
+  const canonicalRoot = await realpath(root);
   async function visit(dir: string): Promise<void> {
     for (const entry of await readdir(dir, { withFileTypes: true })) {
       checkAbort(signal);
@@ -151,7 +154,7 @@ async function runtimeFiles(root: string, signal?: AbortSignal): Promise<string[
       if (entry.isDirectory()) await visit(full);
       else if (entry.isSymbolicLink()) {
         const resolved = await realpath(full);
-        if (!resolved.startsWith(`${path.resolve(root)}${path.sep}`)) throw new Error("Unsafe path in runtime archive.");
+        if (!resolved.startsWith(`${canonicalRoot}${path.sep}`)) throw new Error("Unsafe path in runtime archive.");
         if ((await stat(resolved)).isFile()) files.push(path.relative(root, full));
       } else if (entry.isFile() && entry.name !== "receipt.json") files.push(path.relative(root, full));
     }

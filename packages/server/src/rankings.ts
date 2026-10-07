@@ -50,6 +50,8 @@ export function buildRankingsSnapshot(
   return {
     models: withModelLinks(visible),
     winners: computeWinners(visible),
+    testedModels: withModelLinks(sorted),
+    testedWinners: computeWinners(sorted),
     updatedAt,
     variantAliases: collapsed.variantAliases,
     variantsCollapsed: collapsed.variantsCollapsed,

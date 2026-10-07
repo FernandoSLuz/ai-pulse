@@ -85,6 +85,12 @@ linux:
     - from: scripts/linux-install.mjs
       to: linux/linux-install.mjs
 
+deb:
+  packageName: ai-pulse
+
+rpm:
+  packageName: ai-pulse
+
 pacman:
   packageName: ai-pulse
   # electron-builder's defaults include libappindicator-gtk3 and http-parser,

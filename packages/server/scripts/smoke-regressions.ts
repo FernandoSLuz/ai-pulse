@@ -3,6 +3,7 @@ import { mergeBenchmarkModels } from "../src/fetchers/merge-models.js";
 import { collapseVariants } from "../src/collapse-variants.js";
 import { enrichAccessibility } from "../src/fetchers/huggingface-access.js";
 import { computeWinners } from "../src/rankings.js";
+import { fetchAaPublicSiteModels } from "../src/fetchers/aa-public-site.js";
 import type { ModelRecord } from "../src/types.js";
 
 function model(overrides: Partial<ModelRecord> = {}): ModelRecord {
@@ -59,6 +60,26 @@ const winners = computeWinners([
   model({ slug: "paid", priceBlended: 1 }),
 ]);
 assert.equal(winners.price, "free", "published free price zero is a valid winner");
+
+// AA sends family metadata and metric rows separately. Metric names must win
+// so effort/settings variants survive into the slug-level store.
+const oldAaFetch = globalThis.fetch;
+const aaFixture = [
+  JSON.stringify({ slug: "family-max", name: "Family (Max)", intelligenceIndex: 90, price1mInputTokens: 1, price1mOutputTokens: 2 }),
+  JSON.stringify({ slug: "family-xhigh", shortName: "Family (XHigh)", intelligenceIndex: 89, price1mInputTokens: 1, price1mOutputTokens: 2 }),
+  JSON.stringify({ slug: "family-high", name: "Family (High)", intelligenceIndex: 88, price1mInputTokens: 1, price1mOutputTokens: 2 }),
+  JSON.stringify({ slug: "family-max", name: "Family", creator: { name: "Vendor" }, releaseDate: "2026-10-01" }),
+  JSON.stringify({ slug: "family-xhigh", name: "Family", creator: { name: "Vendor" }, releaseDate: "2026-10-01" }),
+  JSON.stringify({ slug: "family-high", name: "Family", creator: { name: "Vendor" }, releaseDate: "2026-10-01" }),
+].join("\n");
+globalThis.fetch = (async () => new Response(aaFixture, { status: 200 })) as typeof fetch;
+const aaVariants = await fetchAaPublicSiteModels();
+assert.deepEqual(new Map(aaVariants.map((m) => [m.slug, m.name])), new Map([
+  ["family-max", "Family (Max)"],
+  ["family-xhigh", "Family (XHigh)"],
+  ["family-high", "Family (High)"],
+]));
+globalThis.fetch = oldAaFetch;
 
 // An arbitrary third-party Apache repository is not provenance.
 const oldFetch = globalThis.fetch;
