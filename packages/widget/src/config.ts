@@ -11,9 +11,10 @@ import { configPath, dataDir, serverBundleDir, legacyConfigPaths } from "./paths
  */
 
 // Data integrations only. Inference is always local, including after upgrades.
-export type LlmKeyName = "AA_API_KEY" | "TAVILY_API_KEY" | "X_API_BEARER_TOKEN";
-export const LLM_KEY_NAMES: LlmKeyName[] = ["AA_API_KEY", "TAVILY_API_KEY", "X_API_BEARER_TOKEN"];
+export type LlmKeyName = "AA_API_KEY" | "TAVILY_API_KEY";
+export const LLM_KEY_NAMES: LlmKeyName[] = ["AA_API_KEY", "TAVILY_API_KEY"];
 const RETIRED_INFERENCE_KEYS = ["DEEPSEEK_API_KEY", "GEMINI_API_KEY", "CEREBRAS_API_KEY", "GROQ_API_KEY", "OPENROUTER_API_KEY"];
+const RETIRED_CONFIG_KEYS = ["X_API_BEARER_TOKEN"];
 
 export type LeaderboardMode = "bar" | "window";
 
@@ -105,6 +106,12 @@ export function loadConfig(): AppConfig {
     }
   }
 
+  // Remove the retired X credential from both the live file and its backup.
+  // Do this without saveConfig: its normal rolling backup would preserve the
+  // very secret this migration is meant to remove. Failure is best effort so
+  // a valid config can still be loaded if the file is temporarily read-only.
+  for (const candidate of [file, `${file}.bak`]) sanitizeLegacyConfigFile(candidate);
+
   // Read the config, falling back to the last-good backup if it's missing/corrupt.
   for (const candidate of [file, `${file}.bak`]) {
     try {
@@ -126,6 +133,24 @@ export function loadConfig(): AppConfig {
     }
   }
   return fresh;
+}
+
+function sanitizeLegacyConfigFile(candidate: string): void {
+  const temporary = `${candidate}.sanitize.tmp`;
+  try {
+    const raw = JSON.parse(fs.readFileSync(candidate, "utf8")) as unknown;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
+    const rawKeys = (raw as { keys?: unknown }).keys;
+    if (!rawKeys || typeof rawKeys !== "object" || Array.isArray(rawKeys)) return;
+    if (!RETIRED_CONFIG_KEYS.some((name) => name in rawKeys)) return;
+    for (const name of RETIRED_CONFIG_KEYS) delete (rawKeys as Record<string, unknown>)[name];
+    fs.writeFileSync(temporary, JSON.stringify(raw, null, 2), { encoding: "utf8", mode: 0o600 });
+    fs.renameSync(temporary, candidate);
+  } catch {
+    /* best effort; loadConfig still tries the original candidate below */
+  } finally {
+    try { fs.rmSync(temporary, { force: true }); } catch { /* best effort */ }
+  }
 }
 
 /** Keys from the repo-root .env (dev only); empty when packaged or absent. */
@@ -192,9 +217,13 @@ export function serverEnv(config: AppConfig): NodeJS.ProcessEnv {
   };
   // Cloud inference keys are never inherited by the local-only server.
   for (const name of RETIRED_INFERENCE_KEYS) delete env[name];
+  // X is no longer a supported integration, including when inherited from the
+  // desktop environment rather than from the saved config.
+  for (const name of RETIRED_CONFIG_KEYS) delete env[name];
   // Saved data-integration settings are authoritative, including cleared keys.
   for (const name of LLM_KEY_NAMES) delete env[name];
-  for (const [name, value] of Object.entries(config.keys)) {
+  for (const name of LLM_KEY_NAMES) {
+    const value = config.keys[name];
     if (value) env[name] = value;
   }
   return env;

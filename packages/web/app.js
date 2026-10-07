@@ -17,8 +17,7 @@ let state = {
   sortKey: "intelligence",
   sortDir: "desc",
   view: "overview",
-  social: { profiles: [], posts: [], view: "embed", selectedHandle: null },
-  pages: { news: 1, aipicks: 1, creators: 1, companies: 1, rankings: 1, social: 1 },
+  pages: { news: 1, aipicks: 1, creators: 1, companies: 1, rankings: 1 },
   benchmarkQuery: "",
   benchmarkView: "tested",
   benchmarkAccess: "all",
@@ -29,7 +28,7 @@ let state = {
   videoChannelPage: 1,
 };
 
-const PAGE_SIZE = { news: 5, aipicks: 5, creators: 4, companies: 4, rankings: 10, social: 10 };
+const PAGE_SIZE = { news: 5, aipicks: 5, creators: 4, companies: 4, rankings: 10 };
 
 function renderPager(id, key, total, size = PAGE_SIZE[key]) {
   const el = document.getElementById(id);
@@ -38,7 +37,7 @@ function renderPager(id, key, total, size = PAGE_SIZE[key]) {
   state.pages[key] = Math.min(state.pages[key], pages);
   if (pages <= 1) { el.innerHTML = ""; return; }
   el.innerHTML = `<button type="button" class="btn btn-ghost btn-sm" data-page="prev" ${state.pages[key] === 1 ? "disabled" : ""}>Previous</button><span>Page ${state.pages[key]} of ${pages}</span><button type="button" class="btn btn-ghost btn-sm" data-page="next" ${state.pages[key] === pages ? "disabled" : ""}>Next</button>`;
-  el.querySelectorAll("[data-page]").forEach((button) => button.addEventListener("click", () => { state.pages[key] += button.dataset.page === "next" ? 1 : -1; ({ news: renderNews, aipicks: renderAiPicks, creators: renderCreators, companies: renderCompanyVideos, rankings: renderRankings, social: renderSocial }[key])(); }));
+  el.querySelectorAll("[data-page]").forEach((button) => button.addEventListener("click", () => { state.pages[key] += button.dataset.page === "next" ? 1 : -1; ({ news: renderNews, aipicks: renderAiPicks, creators: renderCreators, companies: renderCompanyVideos, rankings: renderRankings }[key])(); }));
 }
 
 function pageItems(items, key) {
@@ -52,11 +51,10 @@ const VIEW_COPY = {
   news: ["News", "Signals and picks, with room to read what matters."],
   videos: ["Videos", "Creators and official labs, separated for quick scanning."],
   benchmarks: ["Benchmarks", "Compare the models that matter by intelligence, coding, speed, and access."],
-  social: ["X / Twitter", "Choose a profile to read on X. Add a username or profile link — no API key needed."],
 };
 
 function setView(view) {
-  if (!VIEW_COPY[view]) return;
+  if (!VIEW_COPY[view]) view = "overview";
   state.view = view;
   document.body.dataset.view = view;
   document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === view));
@@ -65,8 +63,6 @@ function setView(view) {
   document.getElementById("view-description").textContent = description;
   if (view === "overview" || view === "news") { renderNews(); renderAiPicks(); }
   if (view === "videos") { setVideoKind(state.videoKind); renderCreators(); renderCompanyVideos(); loadVideoChannels().catch(showVideoChannelError); }
-  if (view === "social") loadSocial().catch((err) => console.warn("Social feed unavailable", err));
-  else document.getElementById("x-timeline-frame")?.remove();
 }
 
 const SORTABLE = {
@@ -1553,167 +1549,9 @@ document.getElementById("chat-input")?.addEventListener("keydown", (e) => {
   }
 });
 
-/* —— X / social radar —— */
-function safeExternalUrl(value) {
-  try {
-    const url = new URL(String(value || ""), location.origin);
-    return /^https?:$/.test(url.protocol) ? url.href : "#";
-  } catch { return "#"; }
-}
-
-function renderSocial(reload = false) {
-  const profilesEl = document.getElementById("social-profiles");
-  const feed = document.getElementById("social-feed");
-  if (!profilesEl || !feed) return;
-  const profiles = state.social.profiles || [];
-  if (!profiles.some((p) => p.handle === state.social.selectedHandle)) state.social.selectedHandle = profiles[0]?.handle || null;
-  if (!state.social.configured) state.social.view = "embed";
-  const embedded = state.social.view === "embed";
-  profilesEl.innerHTML = profiles.length
-    ? profiles.map((p) => `<span class="profile-pill-wrap ${embedded && p.handle === state.social.selectedHandle ? "active" : ""}"><button type="button" class="profile-pill ${embedded && p.handle === state.social.selectedHandle ? "active" : ""}" data-select-profile="${escapeHtml(p.handle)}" aria-pressed="${embedded && p.handle === state.social.selectedHandle}">𝕏 ${escapeHtml(p.name || p.handle)}</button>${p.source === "user" ? `<button type="button" class="profile-remove" data-remove-profile="${escapeHtml(p.handle)}" aria-label="Remove @${escapeHtml(p.handle)}">×</button>` : ""}</span>`).join("")
-    : `<span class="muted">No profiles added yet</span>`;
-  profilesEl.querySelectorAll("[data-remove-profile]").forEach((btn) => btn.addEventListener("click", () => removeSocialProfile(btn.dataset.removeProfile)));
-  profilesEl.querySelectorAll("[data-select-profile]").forEach((btn) => btn.addEventListener("click", () => {
-    state.social.selectedHandle = btn.dataset.selectProfile;
-    state.social.view = "embed";
-    renderSocial();
-  }));
-  const apiButton = document.getElementById("social-api-feed");
-  apiButton.hidden = !state.social.configured;
-  apiButton.classList.toggle("active", !embedded);
-  document.getElementById("social-pager").innerHTML = "";
-  const status = document.getElementById("social-status");
-  status.classList.toggle("has-error", Boolean(state.social.error));
-  if (status) {
-    status.textContent = state.social.error || (embedded
-      ? "Public profile embeds do not require an API key. X controls availability."
-      : state.social.updatedAt ? `API feed updated ${timeAgo(state.social.updatedAt)}` : "No API posts fetched yet.");
-  }
-  if (embedded && profiles.length) {
-    const profile = profiles.find((p) => p.handle === state.social.selectedHandle);
-    if (state.view !== "social") return;
-    if (!reload && feed.dataset.embedHandle === profile.handle && feed.dataset.embedOrigin === state.social.embedOrigin && (document.getElementById("x-timeline-frame") || feed.dataset.embedState === "unavailable")) return;
-    feed.dataset.embedHandle = profile.handle;
-    feed.dataset.embedOrigin = state.social.embedOrigin || "";
-    delete feed.dataset.embedState;
-    const displayName = String(profile.name || "").replace(/^@+/, "").trim();
-    const hasDistinctName = displayName && displayName.toLowerCase() !== String(profile.handle).toLowerCase();
-    feed.innerHTML = `<article class="x-timeline"><div class="x-timeline-heading"><div><strong>${escapeHtml(hasDistinctName ? displayName : `@${profile.handle}`)}</strong>${hasDistinctName ? `<span class="muted">@${escapeHtml(profile.handle)}</span>` : ""}</div><a class="btn btn-ghost btn-sm" href="https://x.com/${encodeURIComponent(profile.handle)}" target="_blank" rel="noopener noreferrer">Open on X ↗</a></div><p id="x-embed-status" class="muted" role="status">Loading timeline from X…</p><div class="x-frame-container"></div><p class="x-embed-note muted">X controls which posts appear and may ask you to sign in. If the timeline is empty, use Open on X. <a href="https://help.x.com/en/x-for-websites-ads-info-and-privacy" target="_blank" rel="noopener noreferrer">X embed privacy</a></p></article>`;
-    const frame = document.createElement("iframe");
-    frame.id = "x-timeline-frame";
-    frame.title = `X timeline for @${profile.handle}`;
-    // Same-origin access is limited to the separate read-only embed host.
-    // Never grant it to a document on the dashboard/API origin.
-    frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox");
-    frame.referrerPolicy = "no-referrer";
-    const height = Math.max(280, Math.min(620, window.innerHeight - 400));
-    frame.style.height = `${height}px`;
-    let embedUrl;
-    try {
-      embedUrl = new URL("/x-embed.html", state.social.embedOrigin);
-      if (embedUrl.protocol !== "http:" || embedUrl.hostname !== "127.0.0.1" || !embedUrl.port || embedUrl.port === location.port) throw new Error("Embed origin must be isolated");
-    } catch {
-      feed.dataset.embedState = "unavailable";
-      document.getElementById("x-embed-status").textContent = "The X embed could not start. Use Open on X to view the profile.";
-      return;
-    }
-    embedUrl.search = new URLSearchParams({ handle: profile.handle, theme: "dark", height: String(height) }).toString();
-    frame.src = embedUrl.href;
-    feed.querySelector(".x-frame-container").append(frame);
-    return;
-  }
-  delete feed.dataset.embedHandle;
-  delete feed.dataset.embedOrigin;
-  delete feed.dataset.embedState;
-  const posts = state.social.posts || [];
-  if (!posts.length) {
-    feed.innerHTML = `<div class="empty-state"><span class="empty-mark">𝕏</span><strong>${embedded ? "Add a profile to start reading" : "No API posts available"}</strong><p class="muted">${embedded ? "Paste a profile link or enter a username, with or without @." : "Choose a profile above to open its timeline without an API key."}</p><button type="button" class="btn btn-ghost" id="empty-add-social">Add a profile</button></div>`;
-    document.getElementById("empty-add-social")?.addEventListener("click", showSocialForm);
-    return;
-  }
-  feed.innerHTML = pageItems(posts, "social").map((p) => {
-    const link = safeExternalUrl(p.url);
-    return `<article class="social-card"><div class="social-avatar">${escapeHtml((p.authorName || p.authorHandle || "X").slice(0, 1).toUpperCase())}</div><div class="social-body"><div class="social-meta"><strong>${escapeHtml(p.authorName || "Unknown")}</strong><span>@${escapeHtml(p.authorHandle || "")}</span><span>${p.createdAt ? timeAgo(p.createdAt) : ""}</span></div><p>${escapeHtml(stripHtml(p.text || ""))}</p><a href="${escapeHtml(link)}" target="_blank" rel="noopener">Open on X ↗</a></div></article>`;
-  }).join("");
-  renderPager("social-pager", "social", posts.length);
-}
-
-window.addEventListener("message", (event) => {
-  const frame = document.getElementById("x-timeline-frame");
-  if (!frame || event.source !== frame.contentWindow || event.origin !== state.social.embedOrigin || event.data?.type !== "x-embed" || event.data.handle !== state.social.selectedHandle) return;
-  const status = document.getElementById("x-embed-status");
-  if (event.data.state === "ready") status.textContent = "Timeline provided by X.";
-  if (event.data.state === "unavailable") {
-    status.textContent = "X could not load this timeline here. Use Open on X to view the profile.";
-    frame.remove();
-    document.getElementById("social-feed").dataset.embedState = "unavailable";
-  }
-});
-
-async function loadSocial(reload = false) {
-  try {
-    const data = await fetchJson("/api/social?limit=40");
-    state.social.posts = data.items || [];
-    state.social.profiles = data.profiles || [];
-    state.social.configured = data.configured;
-    state.social.embedOrigin = data.embedOrigin;
-    state.social.updatedAt = data.updatedAt || data.lastAttemptAt || null;
-    state.social.error = data.error || null;
-  } catch (err) {
-    state.social.posts = [];
-    state.social.error = "Could not load the X feed right now.";
-  }
-  renderSocial(reload);
-}
-
-function showSocialForm() {
-  const form = document.getElementById("social-profile-form");
-  form?.classList.remove("hidden");
-  document.getElementById("social-handle")?.focus();
-}
-
-function hideSocialForm() {
-  document.getElementById("social-profile-form")?.classList.add("hidden");
-  document.getElementById("social-form-error").textContent = "";
-}
-
-async function addSocialProfile(handle) {
-  if (!handle.trim()) throw new Error("Enter an X username or profile link.");
-  const data = await fetchJson("/api/social/profiles", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ handle: handle.trim() }) });
-  state.social.selectedHandle = data.addedHandle;
-  state.social.view = "embed";
-  await loadSocial();
-}
-
-async function removeSocialProfile(handle) {
-  try { await fetchJson(`/api/social/profiles/${encodeURIComponent(handle)}`, { method: "DELETE" }); await loadSocial(); }
-  catch { state.social.error = "Could not remove that profile."; renderSocial(); }
-}
-
 document.querySelectorAll(".nav-item").forEach((item) => item.addEventListener("click", () => setView(item.dataset.view)));
 document.getElementById("sidebar-stack")?.addEventListener("click", promptOpenApp);
 document.getElementById("sidebar-chat")?.addEventListener("click", () => setChatOpen(true));
-document.getElementById("add-social-profile")?.addEventListener("click", showSocialForm);
-document.getElementById("cancel-social-profile")?.addEventListener("click", hideSocialForm);
-document.getElementById("social-api-feed")?.addEventListener("click", () => { state.social.view = "api"; renderSocial(); });
-document.getElementById("social-profile-form")?.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const input = document.getElementById("social-handle");
-  const error = document.getElementById("social-form-error");
-  const submit = event.submitter;
-  if (submit) submit.disabled = true;
-  error.textContent = "";
-  try { await addSocialProfile(input.value); input.value = ""; hideSocialForm(); }
-  catch (err) { error.textContent = friendlyRequestError(err); }
-  finally { if (submit) submit.disabled = false; }
-});
-document.getElementById("refresh-social")?.addEventListener("click", async () => {
-  const btn = document.getElementById("refresh-social"); btn.disabled = true; btn.textContent = "Refreshing…";
-  try {
-    if (state.social.view === "api") await fetchJson("/api/social/refresh", { method: "POST", timeoutMs: 90_000 });
-  } catch { /* cached state is still rendered */ }
-  await loadSocial(true); btn.disabled = false; btn.textContent = "Refresh";
-});
 setView("overview");
 
 async function init() {

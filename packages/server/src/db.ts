@@ -15,8 +15,6 @@ import type {
   StackEntry,
   StackRole,
   VideoItem,
-  SocialProfile,
-  SocialPost,
 } from "./types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -155,27 +153,6 @@ function initSchema(database: Database.Database): void {
       PRIMARY KEY (channel_id, kind)
     );
 
-    CREATE TABLE IF NOT EXISTS social_profiles (
-      handle TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      description TEXT,
-      user_id TEXT,
-      profile_url TEXT NOT NULL,
-      source TEXT NOT NULL DEFAULT 'user',
-      enabled INTEGER NOT NULL DEFAULT 1,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS social_posts (
-      id TEXT PRIMARY KEY,
-      text TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      author_handle TEXT NOT NULL,
-      author_name TEXT NOT NULL,
-      url TEXT NOT NULL,
-      source TEXT NOT NULL DEFAULT 'x-api',
-      fetched_at TEXT NOT NULL
-    );
   `);
 
   migrateNewsColumns(database);
@@ -231,90 +208,6 @@ function migrateModelColumns(database: Database.Database): void {
       database.prepare("INSERT INTO meta(key,value) VALUES('model_evidence_v2',?)").run(new Date().toISOString());
     })();
   }
-}
-
-export function getSocialProfiles(includeDisabled = false): SocialProfile[] {
-  coalesceSocialProfileHandles();
-  const rows = getDb().prepare(`SELECT * FROM social_profiles ${includeDisabled ? "" : "WHERE enabled = 1"} ORDER BY source, name`).all() as Record<string, unknown>[];
-  return rows.map((r) => ({
-    handle: String(r.handle), name: String(r.name), description: (r.description as string) || undefined,
-    userId: (r.user_id as string) || undefined, profileUrl: String(r.profile_url),
-    source: r.source === "default" ? "default" : "user", enabled: Boolean(r.enabled),
-  }));
-}
-
-function coalesceSocialProfileHandles(): void {
-  const database = getDb();
-  const rows = database.prepare("SELECT rowid, * FROM social_profiles ORDER BY enabled DESC, source DESC, updated_at DESC").all() as Array<Record<string, unknown> & { rowid: number }>;
-  const groups = new Map<string, typeof rows>();
-  for (const row of rows) {
-    const key = String(row.handle).trim().replace(/^@/, "").toLowerCase();
-    if (!key) continue;
-    const group = groups.get(key) ?? [];
-    group.push(row);
-    groups.set(key, group);
-  }
-  const tx = database.transaction(() => {
-    for (const [handle, group] of groups) {
-      const winner = group[0];
-      if (group.length === 1 && winner.handle === handle) continue;
-      for (const duplicate of group.slice(1)) database.prepare("DELETE FROM social_profiles WHERE rowid = ?").run(duplicate.rowid);
-      database.prepare(`UPDATE social_profiles SET handle = ?, name = ?, description = ?, user_id = ?, profile_url = ?, source = ?, enabled = ?, updated_at = ? WHERE rowid = ?`).run(
-        handle,
-        winner.name,
-        winner.description ?? null,
-        winner.user_id ?? null,
-        winner.profile_url,
-        winner.source,
-        winner.enabled,
-        winner.updated_at,
-        winner.rowid,
-      );
-    }
-  });
-  tx();
-}
-
-export function upsertSocialProfiles(profiles: SocialProfile[]): void {
-  coalesceSocialProfileHandles();
-  const stmt = getDb().prepare(`INSERT INTO social_profiles (handle,name,description,user_id,profile_url,source,enabled,updated_at)
-    VALUES (@handle,@name,@description,@userId,@profileUrl,@source,@enabled,@updatedAt)
-    ON CONFLICT(handle) DO UPDATE SET name=excluded.name, description=excluded.description, user_id=excluded.user_id,
-      profile_url=excluded.profile_url, source=excluded.source, enabled=excluded.enabled, updated_at=excluded.updated_at`);
-  const now = new Date().toISOString();
-  const tx = getDb().transaction((items: SocialProfile[]) => items.forEach((p) => {
-    const handle = p.handle.trim().replace(/^@/, "").toLowerCase();
-    const existing = getDb().prepare("SELECT rowid FROM social_profiles WHERE lower(handle) = ? LIMIT 1").get(handle) as { rowid: number } | undefined;
-    if (existing) {
-      getDb().prepare(`UPDATE social_profiles SET handle = ?, name = ?, description = ?, user_id = ?, profile_url = ?, source = ?, enabled = ?, updated_at = ? WHERE rowid = ?`).run(
-        handle, p.name, p.description ?? null, p.userId ?? null, p.profileUrl, p.source, p.enabled ? 1 : 0, now, existing.rowid,
-      );
-    } else {
-      stmt.run({ ...p, handle, description: p.description ?? null, userId: p.userId ?? null, enabled: p.enabled ? 1 : 0, updatedAt: now });
-    }
-  }));
-  tx(profiles);
-}
-
-export function deleteSocialProfile(handle: string): boolean {
-  return getDb().prepare("UPDATE social_profiles SET enabled = 0, updated_at = ? WHERE lower(handle) = lower(?)").run(new Date().toISOString(), handle.trim().replace(/^@/, "")).changes > 0;
-}
-
-export function getSocialPosts(limit = 100): SocialPost[] {
-  const rows = getDb().prepare(`SELECT s.* FROM social_posts s JOIN social_profiles p
-    ON lower(p.handle) = lower(s.author_handle) AND p.enabled = 1
-    ORDER BY julianday(s.created_at) DESC LIMIT ?`).all(Math.min(200, Math.max(1, Math.floor(limit) || 100))) as Record<string, unknown>[];
-  return rows.map((r) => ({ id: String(r.id), text: String(r.text), createdAt: String(r.created_at), authorHandle: String(r.author_handle), authorName: String(r.author_name), url: String(r.url), source: "x-api" }));
-}
-
-export function replaceSocialPosts(posts: SocialPost[], fetchedAt = new Date().toISOString()): void {
-  const stmt = getDb().prepare(`INSERT INTO social_posts (id,text,created_at,author_handle,author_name,url,source,fetched_at)
-    VALUES (@id,@text,@createdAt,@authorHandle,@authorName,@url,'x-api',@fetchedAt)
-    ON CONFLICT(id) DO UPDATE SET text=excluded.text, created_at=excluded.created_at, author_handle=excluded.author_handle,
-      author_name=excluded.author_name, url=excluded.url, fetched_at=excluded.fetched_at`);
-  const tx = getDb().transaction((items: SocialPost[]) => items.forEach((p) => stmt.run({ ...p, authorHandle: p.authorHandle.trim().replace(/^@/, "").toLowerCase(), fetchedAt })));
-  tx(posts);
-  getDb().prepare("DELETE FROM social_posts WHERE julianday(fetched_at) < julianday('now','-30 days')").run();
 }
 
 function migrateNewsColumns(database: Database.Database): void {

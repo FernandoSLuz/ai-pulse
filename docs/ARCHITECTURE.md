@@ -1,6 +1,6 @@
 # Architecture
 
-AI Pulse is a local "AI model radar" for Windows, macOS, and Linux (Omarchy/Hyprland). It combines a news feed, benchmark rankings, a local AI-analyst briefing, local chat with optional web search, a "My Stack" upgrade advisor, social posts, and an always-on desktop leaderboard widget — all driven from a single desktop app.
+AI Pulse is a local "AI model radar" for Windows, macOS, and Linux (Omarchy/Hyprland). It combines a news feed, benchmark rankings, a local AI-analyst briefing, local chat with optional web search, a "My Stack" upgrade advisor, and an always-on desktop leaderboard widget — all driven from a single desktop app.
 
 This document explains how the pieces fit together: the three packages, the supervisor process model, and how data flows through a poll cycle.
 
@@ -105,7 +105,7 @@ flowchart TD
 
 A **poll cycle** moves data from the outside world into SQLite, decides what changed, and pushes updates to any connected clients:
 
-1. **Fetch.** Pull the latest benchmarks (Artificial Analysis), news (RSS), and videos (YouTube creators + companies). X profiles are embedded by the dashboard without a token; the optional X API feed is fetched separately when configured.
+1. **Fetch.** Pull the latest benchmarks (Artificial Analysis), news (RSS), and videos (YouTube creators + companies).
 2. **Upsert.** Write the fetched records into SQLite.
 3. **Detect changes.** Compare against what's already stored to find new models, leader changes, breaking news, and other deltas.
 4. **Run the analyst.** The **LLM router** (see below) curates and produces briefings/analysis for the changes.
@@ -190,21 +190,6 @@ channel URL, or channel ID. The selected `creator`/`company` kind is persisted
 in SQLite after the public RSS feed is validated, including the requirement for
 an item from the last 90 days. The current schema permits one kind per channel
 identity, so the same channel cannot be assigned to both panels.
-
-### X / Twitter integration
-
-The default social mode is `embed`: the dashboard uses X's public embedded
-profile view and requires no API token. Input is normalized from a username,
-`@username`, or an `x.com`/`twitter.com` profile URL. X can restrict protected
-or login-required profiles, so embed mode does not guarantee post visibility.
-The official widget runs on a separate loopback server with an ephemeral port.
-That origin serves only the three embed assets, never the application API. It
-allows the widget's nested-frame bootstrap while the dashboard's API remains
-protected by its own origin checks. The embed HTML cannot execute on the main
-server origin, including through encoded static paths. Failed embeds collapse
-to a compact status and profile link, without an automatic retry loop.
-When `X_API_BEARER_TOKEN` is configured, `api` mode fetches the official feed as
-a separate optional path; it does not replace or enable local AI inference.
 
 ## Variant collapse (presentation only)
 

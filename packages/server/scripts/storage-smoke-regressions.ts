@@ -47,13 +47,6 @@ try {
     assert.equal(db.getNews().length, 2, "future, invalid and unrelated cached stories stay out");
     db.clearAiPicksForPeriod("today");
     sql.prepare("UPDATE models SET price_blended=0, price_input=0, price_output=0, price_source_url=?").run("https://artificialanalysis.ai/models");
-    db.upsertSocialProfiles([{ handle: "sama", name: "Sam Altman", profileUrl: "https://x.com/sama", enabled: true, source: "user" }]);
-    sql.prepare("INSERT INTO social_profiles (handle,name,profile_url,source,enabled,updated_at) VALUES (?,?,?,?,?,?)").run("SAMA", "Duplicate", "https://x.com/sama", "user", 1, new Date().toISOString());
-    assert.equal(db.getSocialProfiles().filter((p) => p.handle === "sama").length, 1, "case variants coalesce to one profile");
-    db.replaceSocialPosts([{ id: "post", text: "AI news", createdAt: new Date().toISOString(), authorHandle: "sama", authorName: "Sam Altman", url: "https://x.com/sama/status/1", source: "x-api" }]);
-    assert.equal(db.getSocialPosts().length, 1);
-    db.deleteSocialProfile("SAMA");
-    assert.equal(db.getSocialPosts().length, 0, "unfollow removes cached posts from the feed");
   }
   sql.close();
   if (!restart) execFileSync(process.execPath, ["--import", "tsx", fileURLToPath(import.meta.url), "--restart"], { env: process.env, stdio: "inherit" });

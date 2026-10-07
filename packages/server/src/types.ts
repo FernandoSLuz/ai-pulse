@@ -61,26 +61,6 @@ export interface VideoItem {
   kind?: "creator" | "company";
 }
 
-export interface SocialProfile {
-  handle: string;
-  name: string;
-  description?: string;
-  userId?: string;
-  profileUrl: string;
-  source: "default" | "user";
-  enabled: boolean;
-}
-
-export interface SocialPost {
-  id: string;
-  text: string;
-  createdAt: string;
-  authorHandle: string;
-  authorName: string;
-  url: string;
-  source: "x-api";
-}
-
 export interface CategoryWinners {
   overall: string;
   coding: string;

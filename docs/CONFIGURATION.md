@@ -30,25 +30,11 @@ the last successful results remain cached locally.
 | --- | --- | --- | --- |
 | Artificial Analysis (`AA_API_KEY`) | Benchmark enrichment (rankings work without it) | https://artificialanalysis.ai/insights | Optional |
 | Tavily (`TAVILY_API_KEY`) | Web search only | https://app.tavily.com | Optional |
-| X (`X_API_BEARER_TOKEN`) | Optional official X API feed; embedded profiles work without it | X developer portal | Optional |
 
 Notes on the optional keys:
 
 - **Artificial Analysis** is *not* required for rankings: AI Pulse reads the public leaderboard directly. The keyed `/free` endpoint only enriches rows (composite coding/math indexes) and is skipped quietly when the key is missing or rejected.
 - **Chat web search** uses **Tavily** when configured; it is not a model provider.
-
-### X / Twitter profiles
-
-The X view starts in **Embed** mode and does not require a token. It preselects
-official AI profiles and accepts a username (`sama`), an `@username`, or a
-profile URL from `x.com` or `twitter.com` (including `www` and `mobile` links).
-Copied query strings and fragments are ignored. The embed is subject to X's
-availability rules: protected profiles and pages that require login may not
-render. AI Pulse does not claim that an embed guarantees access to posts.
-
-`X_API_BEARER_TOKEN` is a separate, optional **API** mode for fetching the
-official feed. It is not needed to add profiles or use the default embedded
-view.
 
 ## Local AI setup
 

@@ -121,8 +121,7 @@ tokens. Benchmark sources can be changed in the dashboard's **Source** selector.
 No AI provider key is required. In **Connections**, optionally configure:
 
 - `AA_API_KEY` for benchmark enrichment (public rankings work without it);
-- `TAVILY_API_KEY` for web search only;
-- `X_API_BEARER_TOKEN` for the optional official X API feed. Without it, the X view uses embedded profiles and accepts usernames, `@usernames`, and `x.com`/`twitter.com` profile URLs. Protected or login-required profiles may be restricted by X.
+- `TAVILY_API_KEY` for web search only.
 
 In **Videos → Add channel**, enter a YouTube username, `@username`, channel URL,
 or channel ID, then choose **Creators** or **Companies**. AI Pulse validates the

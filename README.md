@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/FernandoSLuz/ai-pulse/actions/workflows/ci.yml/badge.svg)](https://github.com/FernandoSLuz/ai-pulse/actions/workflows/ci.yml)
 
-AI Pulse tracks the AI landscape for you: a live **news feed**, **benchmark rankings**, an **AI-analyst briefing**, local **chat**, optional web search, a **"My Stack"** upgrade advisor, social posts, and an always-on **desktop leaderboard**. Analysis and chat run on a small local GGUF model configured during first setup.
+AI Pulse tracks the AI landscape for you: a live **news feed**, **benchmark rankings**, an **AI-analyst briefing**, local **chat**, optional web search, a **"My Stack"** upgrade advisor, and an always-on **desktop leaderboard**. Analysis and chat run on a small local GGUF model configured during first setup.
 
 It lives in your **system tray**, starts silently on login, keeps itself alive, and you configure everything from one app window.
 
@@ -37,12 +37,11 @@ The published desktop builds currently cover Windows x64, macOS Intel and Apple 
 ## What you get
 
 - **News feed** — curated RSS sources, de-duplicated and scored (lab blogs plus press).
-- **Creators** — YouTube videos from independent AI channels.
+- **Creators** — YouTube videos from independent AI channels. Add channels by username, `@username`, or channel link, without an API key.
 - **Companies** — official lab/company YouTube videos in a separate dashboard panel (not mixed into Creators).
 - **Benchmark sources** — switch between Artificial Analysis, LiveBench, and SWE-bench Verified without API tokens. Each keeps its own scores and methodology. Artificial Analysis includes prices, speed, and evidence-backed access labels, with all tested configurations shown by default and an optional best-per-model view.
 - **AI Analyst** — a briefing on new models, leader changes, and big news.
 - **Ask AI Pulse** — local chat with optional Tavily web search.
-- **X / Twitter** — a no-token embedded profile view is the default, preselected with official AI accounts. Add a username, `@username`, or an `x.com`/`twitter.com` profile URL; X may still restrict embeds for protected or login-required accounts. The optional `X_API_BEARER_TOKEN` adds the separate official API feed.
 - **My Stack** — track your current model and get upgrade suggestions when something better lands.
 - **Desktop leaderboard** — on Windows an always-on-top widget docked to your screen edge; on Omarchy a **bar panel**: click the AI Pulse entry in the bar and the leaderboard drops down like the other Omarchy panels (Esc closes, nothing else moves). The floating window remains available in Settings.
 - **Notifications** — desktop notifications (Windows toasts; `notify-send`/libnotify on Linux) for new models, leader changes, and upgrade suggestions.
@@ -50,14 +49,14 @@ The published desktop builds currently cover Windows x64, macOS Intel and Apple 
 
 ## Why it stays reliable
 
-The local runtime is configured on first launch with light/balanced profiles selected from detected RAM. Light uses **Qwen3.5 0.8B Q4**, and Balanced uses **Qwen3 1.7B Q8_0**; both are downloaded as pinned, hash-verified GGUF files and served by the pinned llama.cpp CPU runtime. The app works without a model too: deterministic rules keep rankings and briefings usable while a download is pending or cancelled. All three benchmark sources load public data automatically; `AA_API_KEY` is optional enrichment. X posts and Tavily are optional data/search integrations, never model fallbacks. Details in [docs/RELIABILITY.md](docs/RELIABILITY.md).
+The local runtime is configured on first launch with light/balanced profiles selected from detected RAM. Light uses **Qwen3.5 0.8B Q4**, and Balanced uses **Qwen3 1.7B Q8_0**; both are downloaded as pinned, hash-verified GGUF files and served by the pinned llama.cpp CPU runtime. The app works without a model too: deterministic rules keep rankings and briefings usable while a download is pending or cancelled. All three benchmark sources load public data automatically; `AA_API_KEY` is optional enrichment. Tavily is an optional search integration, never a model fallback. Details in [docs/RELIABILITY.md](docs/RELIABILITY.md).
 
 ## The app is the control center
 
 Open AI Pulse from the tray (or its shortcut) to reach the **Settings** window:
 
 - **Local AI** — model profile, download progress/hash status, and runtime controls.
-- **Connections** — optional AA, Tavily, and X tokens. No `.env`, no config files to hand-edit.
+- **Connections** — optional AA and Tavily keys. No `.env`, no config files to hand-edit.
 - **Desktop leaderboard** — show/hide, dock left/right, pin on top (Windows only — Hyprland owns stacking), row count.
 - **Startup & service** — start on login, start hidden, server port, and Start/Stop/Restart.
 - **Preferences** — your primary model, provider, priority weights, budget, and notes.

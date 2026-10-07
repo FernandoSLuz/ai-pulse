@@ -59,10 +59,8 @@ import { initTheme, getTheme, reloadTheme, onThemeChange, stopTheme } from "./th
 import type { ChangeEvent, NewsItem, NewsPeriod, StackRole, WsMessage } from "./types.js";
 import { isNewsPeriod } from "./types.js";
 import { getLocalAIStatus, initializeLocalAI, setupLocalAI, cancelLocalAISetup, stopLocalAI, LOCAL_AI_MODELS, runtimeSpec } from "./local-ai/index.js";
-import { registerSocialRoutes, initializeSocialPolling, stopSocialPolling } from "./social/routes.js";
 import { getPublicBenchmarks, refreshPublicBenchmarks, startPublicBenchmarkPolling, stopPublicBenchmarkPolling } from "./benchmarks/public-sources.js";
 import { registerYouTubeChannelRoutes } from "./youtube/routes.js";
-import { startXEmbedHost } from "./social/embed-host.js";
 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -122,12 +120,6 @@ onThemeChange((theme) => broadcast({ type: "theme", payload: { name: theme.name,
 
 const app = express();
 const ALLOWED_ORIGINS = new Set([`http://localhost:${PORT}`, `http://127.0.0.1:${PORT}`]);
-// X's widget needs same-origin access to its own nested frames. Give it a
-// separate, read-only origin rather than the dashboard/API's origin.
-const embedHost = await startXEmbedHost(webRoot, [...ALLOWED_ORIGINS]).catch((err) => {
-  console.warn("[X embed] Isolated host unavailable:", err.message);
-  return null;
-});
 app.use(cors({ origin: [...ALLOWED_ORIGINS] }));
 // CORS only governs reads; a cross-site page can still fire simple POSTs at
 // loopback. Reject mutating requests whose Origin is not ours (non-browser
@@ -142,16 +134,7 @@ app.use((req, res, next) => {
 });
 app.use(express.json());
 
-app.use(express.static(webRoot, {
-  setHeaders(res, filePath) {
-    // Also covers encoded paths resolved by express.static: the wrapper may
-    // only execute on the dedicated host, never on the local API's origin.
-    if (path.basename(filePath).toLowerCase() === "x-embed.html") {
-      res.setHeader("Content-Security-Policy", "default-src 'none'; sandbox");
-      res.setHeader("Cache-Control", "no-store");
-    }
-  },
-}));
+app.use(express.static(webRoot));
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({
@@ -229,7 +212,6 @@ app.post("/api/local-ai/cancel", (_req, res) => {
   cancelLocalAISetup();
   res.json(localAIResponse());
 });
-registerSocialRoutes(app, embedHost?.origin ?? null);
 registerYouTubeChannelRoutes(app);
 
 app.get("/api/health", (_req, res) => {
@@ -836,14 +818,12 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   console.log(`[Server] ${signal} received — shutting down`);
   for (const t of timers) clearInterval(t);
   stopTheme();
-  stopSocialPolling();
   stopPublicBenchmarkPolling();
   cancelLocalAISetup();
   await stopLocalAI();
   for (const client of clients) client.terminate();
   wss.close();
   server.close();
-  await embedHost?.close();
   try {
     getDb().close();
   } catch (err) {
@@ -866,7 +846,6 @@ server.on("error", (err) => {
 server.listen(PORT, BIND_HOST, () => {
   console.log(`AI Pulse server v${APP_VERSION} running at http://${BIND_HOST}:${PORT}`);
   Promise.resolve(initializeLocalAI()).catch((err) => console.warn("[Local AI] Initialization:", err.message));
-  initializeSocialPolling();
   startPublicBenchmarkPolling(() => broadcast({ type: "public_benchmarks", payload: getPublicBenchmarks() }));
   bootstrap().catch((err) => console.error("Bootstrap failed:", err));
 });
