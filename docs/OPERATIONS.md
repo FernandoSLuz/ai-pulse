@@ -106,7 +106,7 @@ AI Pulse checks GitHub Releases for a newer version on startup and every few hou
 - When an update is found you get a tray/notification hint, and **Settings → Updates** shows it.
 - Click **Download & install** to fetch it, then **Restart & install** to apply. You can also **Check for updates** manually there.
 - Release-candidate builds are prereleases and are not offered as automatic updates.
-- **Linux:** in-app updates work for the **AppImage** (`latest-linux.yml`). A **pacman** install shows *unsupported* in **Settings → Updates** — upgrade it with `sudo pacman -U ./ai-pulse-<version>.pacman` from the next final release (RCs ship no `.pacman`).
+- **Linux:** in-app updates work for the **AppImage** (`latest-linux.yml`). A **pacman** install shows *unsupported* in **Settings → Updates** — upgrade it with `sudo pacman -U ./AI-Pulse-<version>-Linux-Arch-Omarchy-x64.pacman` from the next final release (RCs ship no `.pacman`).
 - **macOS:** Intel and Apple Silicon builds are architecture-specific and currently update by downloading the next matching DMG manually.
 
 ## Omarchy: theme and bar widget
