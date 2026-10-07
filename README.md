@@ -8,6 +8,10 @@ AI Pulse tracks the AI landscape for you: a live **news feed**, **benchmark rank
 
 It lives in your **system tray**, starts silently on login, keeps itself alive, and you configure everything from one app window.
 
+<!-- public-repo-support:start -->
+Support this project: [Buy me a coffee](https://www.buymeacoffee.com/fernandosluz).
+<!-- public-repo-support:end -->
+
 ---
 
 ## Install
