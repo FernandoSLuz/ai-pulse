@@ -689,6 +689,10 @@ tr.row-mine td {
 .source-field select { min-width: 165px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg); color: var(--text); font: inherit; }
 .public-benchmark-view { display: block; }
 .public-benchmark-view.hidden { display: none; }
+.public-benchmark-view table { table-layout: fixed; }
+.public-benchmark-view th, .public-benchmark-view td { white-space: normal; overflow-wrap: anywhere; vertical-align: top; }
+.public-benchmark-view th:first-child { width: 42px; }
+.public-benchmark-view th:last-child { width: 38%; }
 .public-benchmark-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin: 4px 0 12px; }
 .public-benchmark-head h3 { margin: 0 0 3px; font-size: 1rem; }
 .public-benchmark-head p { margin: 0; max-width: 70ch; }
@@ -699,7 +703,7 @@ tr.row-mine td {
 .public-row-warning { color: var(--gold); }
 .public-category-details { margin-top: 6px; font-size: .74rem; font-weight: 400; }
 .public-category-details summary { cursor: pointer; color: var(--accent); }
-.public-category-grid { display: grid; grid-template-columns: repeat(2, minmax(120px, 1fr)); gap: 3px 12px; margin-top: 5px; color: var(--muted); }
+.public-category-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr)); gap: 3px 12px; margin-top: 5px; color: var(--muted); }
 .public-category-grid div { display: flex; justify-content: space-between; gap: 12px; }
 .public-category-grid strong { color: var(--text); font-weight: 500; }
 
