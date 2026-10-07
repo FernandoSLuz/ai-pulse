@@ -114,6 +114,10 @@ verifies every catalogue hash, and shows progress; you can cancel and resume
 later. If no model is ready, deterministic rules keep rankings and briefings
 usable. No cloud model is contacted.
 
+The three public benchmark sources (Artificial Analysis, LiveBench, and SWE-bench
+Verified), news, and videos work immediately with an internet connection and no
+tokens. Benchmark sources can be changed in the dashboard's **Source** selector.
+
 No AI provider key is required. In **Connections**, optionally configure:
 
 - `AA_API_KEY` for benchmark enrichment (public rankings work without it);

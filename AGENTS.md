@@ -34,6 +34,9 @@ Fonte única: `README.md` + `docs/ARCHITECTURE.md` + `docs/CONFIGURATION.md` +
   é enriquecimento opcional (índices compostos de coding/math) e NUNCA pode gerar linhas
   sintéticas/demo. Com feed completo (≥100 modelos) o poll poda linhas ausentes: o banco espelha
   o feed em vez de acumular modelos aposentados.
+- LiveBench e SWE-bench são boards independentes em `benchmarks/public-sources.ts`,
+  com cache persistente e sem token. Não misturar suas notas com AA, nem confundir
+  versão da suíte/data do resultado com a hora em que os dados foram baixados.
 - Curadoria e chat rodam no GGUF local por llama-server. O primeiro setup detecta RAM e baixa
   o perfil Light/Balanced com hash verificável e cancelamento; sem modelo pronto, usa regras.
   O catálogo de modelos é a fonte dos URLs/hashes. `AA_API_KEY`, `TAVILY_API_KEY` e

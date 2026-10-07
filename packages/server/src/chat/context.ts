@@ -17,7 +17,7 @@ export function buildPulseSystemPrompt(searchEnabled: boolean): string {
     });
 
   const topRows = (snapshot.testedModels ?? snapshot.models).slice(0, 8).map((m, i) => {
-    const price = m.priceBlended === null ? "price n/a" : `$${m.priceBlended.toFixed(2)}`;
+    const price = m.priceBlended === null ? "price n/a" : `$${m.priceBlended}`;
     const license = m.license ? `, license ${m.license}` : ", license unknown";
     return `${i + 1}. ${m.name} (${m.creator}) — slug ${m.slug}, intel ${m.intelligence.toFixed(1)}, code ${m.coding > 0 ? m.coding.toFixed(1) : "n/a"}, price ${price}/1M tokens (3:1 input/output blend), speed ${m.speed > 0 ? m.speed.toFixed(0) : "n/a"}, access ${m.accessibility}${license}`;
   });

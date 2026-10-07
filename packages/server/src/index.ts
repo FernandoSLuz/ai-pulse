@@ -60,6 +60,7 @@ import type { ChangeEvent, NewsItem, NewsPeriod, StackRole, WsMessage } from "./
 import { isNewsPeriod } from "./types.js";
 import { getLocalAIStatus, initializeLocalAI, setupLocalAI, cancelLocalAISetup, stopLocalAI, LOCAL_AI_MODELS, runtimeSpec } from "./local-ai/index.js";
 import { registerSocialRoutes, initializeSocialPolling, stopSocialPolling } from "./social/routes.js";
+import { getPublicBenchmarks, refreshPublicBenchmarks, startPublicBenchmarkPolling, stopPublicBenchmarkPolling } from "./benchmarks/public-sources.js";
 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -242,6 +243,21 @@ app.get("/api/rankings", (_req, res) => {
   } catch (err) {
     console.error("[API] /api/rankings failed:", err);
     res.status(503).json({ error: "temporarily unavailable" });
+  }
+});
+
+app.get("/api/benchmarks", (_req, res) => {
+  res.json(getPublicBenchmarks());
+});
+app.post("/api/benchmarks/refresh", async (_req, res) => {
+  try {
+    await refreshPublicBenchmarks();
+    const payload = getPublicBenchmarks();
+    broadcast({ type: "public_benchmarks", payload });
+    res.json(payload);
+  } catch (error) {
+    console.warn("[Public Benchmarks] Refresh failed:", (error as Error).message);
+    res.status(503).json({ error: "Public benchmark refresh is temporarily unavailable", ...getPublicBenchmarks() });
   }
 });
 
@@ -796,6 +812,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   for (const t of timers) clearInterval(t);
   stopTheme();
   stopSocialPolling();
+  stopPublicBenchmarkPolling();
   cancelLocalAISetup();
   await stopLocalAI();
   for (const client of clients) client.terminate();
@@ -824,5 +841,6 @@ server.listen(PORT, BIND_HOST, () => {
   console.log(`AI Pulse server v${APP_VERSION} running at http://${BIND_HOST}:${PORT}`);
   Promise.resolve(initializeLocalAI()).catch((err) => console.warn("[Local AI] Initialization:", err.message));
   initializeSocialPolling();
+  startPublicBenchmarkPolling(() => broadcast({ type: "public_benchmarks", payload: getPublicBenchmarks() }));
   bootstrap().catch((err) => console.error("Bootstrap failed:", err));
 });

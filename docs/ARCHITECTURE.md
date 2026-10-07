@@ -37,7 +37,7 @@ The web dashboard's settings gear no longer edits anything itself: it redirects 
 
 The server is the workhorse. It:
 
-- Polls **Artificial Analysis** for benchmarks, **RSS feeds** for news, and **YouTube** for creator **and company** videos.
+- Polls **Artificial Analysis**, **LiveBench**, and **SWE-bench Verified** for separate benchmark boards, **RSS feeds** for news, and **YouTube** for creator **and company** videos.
 - Runs the **AI analyst** to curate and brief.
 - Persists everything to **SQLite** (`better-sqlite3`).
 - Serves the **REST API**, the **WebSocket feed**, and the **static web dashboard**.
@@ -146,6 +146,20 @@ rejected/expired key never fabricates rows. When a full feed (≥100 models) is 
 models absent from it are pruned, so the DB mirrors the live leaderboard instead of accumulating
 stale entries.
 
+`benchmarks/public-sources.ts` polls LiveBench and SWE-bench Verified independently
+every two hours. `GET /api/benchmarks` exposes their cached boards;
+`POST /api/benchmarks/refresh` requests a coalesced, rate-limited refresh, and
+`{type:"public_benchmarks"}` broadcasts results. Successful snapshots persist in
+SQLite metadata and survive restarts. Failed or invalid responses retain the last
+snapshot with an error and stale indicator.
+
+LiveBench's current suite version is discovered from its official repository. Its
+global score uses equal weighting of category means, matching the published
+formula; missing data is not zero. The suite release date is distinct from the
+fetch date. SWE-bench rows describe agent/model systems with submission dates,
+source check status, and source warnings. Scores, prices, and license claims are
+never transferred between these boards or used to create a combined ranking.
+
 ## Key modules per package
 
 ### `packages/server`
@@ -153,6 +167,7 @@ stale entries.
 | Path | Role |
 | --- | --- |
 | `fetchers/` | Pull benchmarks (Artificial Analysis), news (RSS), and videos (YouTube). |
+| `benchmarks/public-sources.ts` | Fetch, validate, and cache independent public LiveBench and SWE-bench boards without tokens. |
 | `collapse-variants.ts` | Presentation-only collapse of effort/reasoning variants for the leaderboard. |
 | `rankings.ts` | Builds `/api/rankings` after collapse; winners and ★ always point at a visible row. |
 | `analyst/llm-router.ts` | Selects the local runtime/profile and rules mode. |

@@ -22,15 +22,16 @@ let state = {
   benchmarkQuery: "",
   benchmarkView: "tested",
   benchmarkAccess: "all",
+  benchmarkSource: "aa",
+  publicBoards: [],
   videoKind: "creator",
 };
 
 const PAGE_SIZE = { news: 5, aipicks: 5, creators: 4, companies: 4, rankings: 10, social: 10 };
 
-function renderPager(id, key, total) {
+function renderPager(id, key, total, size = PAGE_SIZE[key]) {
   const el = document.getElementById(id);
   if (!el) return;
-  const size = PAGE_SIZE[key];
   const pages = Math.max(1, Math.ceil(total / size));
   state.pages[key] = Math.min(state.pages[key], pages);
   if (pages <= 1) { el.innerHTML = ""; return; }
@@ -150,6 +151,10 @@ function connectWs() {
     const msg = JSON.parse(ev.data);
     if (msg.type === "rankings") {
       state.rankings = msg.payload;
+      renderRankings();
+    }
+    if (msg.type === "public_benchmarks") {
+      setPublicBoards(msg.payload?.boards);
       renderRankings();
     }
     if (msg.type === "news") {
@@ -408,8 +413,14 @@ function fmtMetric(value, decimals = 0) {
 }
 
 function fmtPrice(value) {
-  if (value == null || !Number.isFinite(Number(value))) return "—";
-  return `$${Number(value).toFixed(2)}`;
+  if (value == null || !Number.isFinite(Number(value)) || Number(value) < 0) return "—";
+  const amount = Number(value);
+  if (amount > 0 && amount < 0.000001) return "<$0.000001";
+  if (amount === 0) return "$0.00";
+  let text = amount.toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
+  if (!text.includes(".")) text += ".00";
+  else while (text.split(".")[1].length < 2) text += "0";
+  return `$${text}`;
 }
 
 function safeLink(value) {
@@ -590,6 +601,19 @@ function renderRankings() {
   const r = state.rankings;
   const tbody = document.querySelector("#rankings-table tbody");
   const updated = document.getElementById("rankings-updated");
+  const publicView = document.getElementById("public-benchmark-view");
+  const table = document.getElementById("rankings-table");
+  if (state.benchmarkSource !== "aa") {
+    table.classList.add("hidden");
+    document.getElementById("aa-attribution")?.classList.add("hidden");
+    document.querySelectorAll(".benchmark-tools .segmented").forEach((el) => el.classList.add("hidden"));
+    renderPublicBenchmark();
+    return;
+  }
+  table.classList.remove("hidden");
+  document.getElementById("aa-attribution")?.classList.remove("hidden");
+  document.querySelectorAll(".benchmark-tools .segmented").forEach((el) => el.classList.remove("hidden"));
+  if (publicView) { publicView.classList.add("hidden"); publicView.innerHTML = ""; }
   const rows = r ? benchmarkRows(r) : [];
   if (!rows.length) {
     document.getElementById("rankings-pager").innerHTML = "";
@@ -635,6 +659,81 @@ function renderRankings() {
     </tr>`;
   }).join("");
   renderPager("rankings-pager", "rankings", sorted.length);
+}
+
+function publicValue(value) {
+  if (value == null || !Number.isFinite(Number(value))) return "—";
+  const number = Number(value);
+  return Number.isInteger(number) ? String(number) : number.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function publicDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+
+function publicCalendarDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
+}
+
+function setPublicBoards(boards) {
+  state.publicBoards = Array.isArray(boards) ? boards : [];
+  const select = document.getElementById("benchmark-source");
+  if (!select) return;
+  const selected = state.benchmarkSource;
+  select.innerHTML = '<option value="aa">Artificial Analysis</option>' + state.publicBoards.map((board) => `<option value="${escapeHtml(board.id)}">${escapeHtml(board.name || board.id)}</option>`).join("");
+  select.value = [...select.options].some((option) => option.value === selected) ? selected : "aa";
+  state.benchmarkSource = select.value;
+}
+
+function renderPublicBenchmark() {
+  const view = document.getElementById("public-benchmark-view");
+  const pager = document.getElementById("rankings-pager");
+  if (!view) return;
+  const board = state.publicBoards.find((candidate) => candidate.id === state.benchmarkSource);
+  if (!board) {
+    const updated = document.getElementById("rankings-updated");
+    if (updated) { updated.textContent = ""; updated.classList.remove("stale-warning"); }
+    view.classList.remove("hidden");
+    view.innerHTML = '<p class="muted">Loading public benchmark sources…</p>';
+    pager.innerHTML = "";
+    return;
+  }
+  const columns = Array.isArray(board.columns) ? board.columns : [];
+  const query = state.benchmarkQuery.trim().toLowerCase();
+  const rows = (Array.isArray(board.rows) ? board.rows : []).filter((row) => !query || [row.name, row.detail, row.status, row.warning].filter(Boolean).join(" ").toLowerCase().includes(query));
+  const publicPageSize = 5;
+  state.pages.rankings = Math.min(state.pages.rankings, Math.max(1, Math.ceil(rows.length / publicPageSize)));
+  const pageStart = (state.pages.rankings - 1) * publicPageSize;
+  const visible = rows.slice(pageStart, pageStart + publicPageSize);
+  const sourceCalendarDate = publicCalendarDate(board.sourceUpdatedAt);
+  const sourceDate = sourceCalendarDate ? `${board.sourceUpdatedLabel || "Source updated"} · ${sourceCalendarDate}` : (board.sourceVersion ? "" : "Source update date unavailable");
+  const fetchedDate = board.fetchedAt && publicDate(board.fetchedAt) ? `Fetched ${publicDate(board.fetchedAt)}` : "Fetch date unavailable";
+  const sourceVersion = board.sourceVersion ? `Suite release ${board.sourceVersion}` : "";
+  const links = [
+    board.sourceUrl ? `<a href="${escapeHtml(safeLink(board.sourceUrl))}" target="_blank" rel="noopener">Source</a>` : "",
+    board.methodologyUrl ? `<a href="${escapeHtml(safeLink(board.methodologyUrl))}" target="_blank" rel="noopener">Methodology</a>` : "",
+  ].filter(Boolean).join(" · ");
+  const notice = board.error || board.stale ? `<p class="benchmark-source-error" role="status">${escapeHtml(board.error || "This source may be stale.")}${rows.length ? " Showing the last cached dataset." : ""}</p>` : "";
+  const updated = document.getElementById("rankings-updated");
+  if (updated) { updated.textContent = board.stale ? "⚠ Cached source data" : ""; updated.classList.toggle("stale-warning", board.stale === true); }
+  view.classList.remove("hidden");
+  view.innerHTML = `${notice}<div class="public-benchmark-head"><div><h3>${escapeHtml(board.name || state.benchmarkSource)}</h3><p class="muted">${escapeHtml(board.description || "Public benchmark results")}</p></div><div class="public-benchmark-meta">${sourceVersion ? `<span>${escapeHtml(sourceVersion)}</span>` : ""}<span>${escapeHtml(sourceDate)}</span><span>${escapeHtml(fetchedDate)}</span></div></div><div class="table-wrap"><table><thead><tr><th>#</th><th>${escapeHtml(board.entityLabel || "Model")}</th><th>${escapeHtml(board.metricLabel || "Score")}</th></tr></thead><tbody>${visible.length ? visible.map((row, index) => { const submitted = publicCalendarDate(row.testedAt); const detail = [row.detail, row.status, submitted ? `Submitted ${submitted}` : ""].filter(Boolean).join(" · "); const warning = row.warning ? `<small class="public-row-warning">${escapeHtml(row.warning)}</small>` : ""; const categories = columns.map((column) => `<div><span>${escapeHtml(column.label || column.key)}</span><strong>${publicValue(row.values?.[column.key])}</strong></div>`).join(""); const categoryDetails = columns.length ? `<details class="public-category-details"><summary>Category scores</summary><div class="public-category-grid">${categories}</div></details>` : ""; return `<tr><td>${pageStart + index + 1}</td><td>${row.url && safeLink(row.url) ? `<a href="${escapeHtml(safeLink(row.url))}" target="_blank" rel="noopener">${escapeHtml(row.name || row.id)}</a>` : escapeHtml(row.name || row.id)}${detail ? `<small class="public-row-detail">${escapeHtml(detail)}</small>` : ""}${warning}</td><td><strong>${publicValue(row.score)}</strong>${categoryDetails}</td></tr>`; }).join("") : `<tr><td colspan="3" class="muted">No rows match this filter.</td></tr>`}</tbody></table></div><p class="attribution">${links}${links ? " · " : ""}${escapeHtml(board.metricLabel || "Metric")} values are reported by this source and are not combined with other boards.</p>`;
+  renderPager("rankings-pager", "rankings", rows.length, publicPageSize);
+}
+
+async function loadPublicBenchmarks() {
+  try {
+    const payload = await fetchJson("/api/benchmarks");
+    setPublicBoards(payload?.boards);
+  } catch (error) {
+    state.publicBoards = [];
+    console.warn("Public benchmark sources unavailable", error);
+  }
+  renderRankings();
 }
 
 function renderStackChip() {
@@ -1082,7 +1181,29 @@ async function refreshResource(buttonId, endpoint, loaders) {
   btn.textContent = previous;
 }
 
-document.getElementById("refresh-rankings")?.addEventListener("click", () => refreshResource("refresh-rankings", "/api/rankings/refresh", [async () => { state.rankings = await fetchJson("/api/rankings"); renderRankings(); }]));
+document.getElementById("refresh-rankings")?.addEventListener("click", async () => {
+  const button = document.getElementById("refresh-rankings");
+  const previous = button.textContent;
+  button.disabled = true;
+  button.textContent = "Refreshing…";
+  try {
+    if (state.benchmarkSource === "aa") {
+      await fetchJson("/api/rankings/refresh", { method: "POST", timeoutMs: 90_000 });
+      state.rankings = await fetchJson("/api/rankings");
+    } else {
+      const result = await fetchJson("/api/benchmarks/refresh", { method: "POST", timeoutMs: 90_000 });
+      if (Array.isArray(result?.boards)) setPublicBoards(result.boards);
+    }
+    renderRankings();
+  } catch (error) {
+    const updated = document.getElementById("rankings-updated");
+    if (updated) { updated.textContent = "⚠ Refresh failed — showing cached data"; updated.classList.add("stale-warning"); }
+  } finally {
+    button.disabled = false;
+    button.textContent = previous;
+  }
+});
+document.getElementById("benchmark-source")?.addEventListener("change", (event) => { state.benchmarkSource = event.target.value; state.pages.rankings = 1; renderRankings(); });
 document.getElementById("refresh-videos")?.addEventListener("click", () => refreshResource("refresh-videos", "/api/videos/refresh", [loadVideos, loadCompanyVideos]));
 document.getElementById("benchmark-search")?.addEventListener("input", (event) => { state.benchmarkQuery = event.target.value; state.pages.rankings = 1; renderRankings(); });
 document.querySelectorAll("[data-benchmark-view]").forEach((button) => button.addEventListener("click", () => { document.querySelectorAll("[data-benchmark-view]").forEach((b) => b.classList.remove("active")); button.classList.add("active"); state.benchmarkView = button.dataset.benchmarkView; state.pages.rankings = 1; renderRankings(); }));
@@ -1443,6 +1564,7 @@ async function init() {
     fetchJson("/api/rankings"),
     fetchJson(`/api/news?limit=50&period=${state.newsPeriod}&category=${state.newsCategory}`),
     fetchJson("/api/briefing"),
+    loadPublicBenchmarks(),
   ]);
 
   let anyOk = false;

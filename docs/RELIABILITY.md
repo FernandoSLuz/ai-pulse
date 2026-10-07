@@ -51,6 +51,20 @@ leaderboard and mirrors the models it reports (metadata + metrics joined by slug
 fabricated rows. When a full feed is fetched, models missing from it are pruned, so retired
 entries stop ranking against current ones.
 
+The dashboard also reads [LiveBench](https://livebench.ai/) and
+[SWE-bench Verified](https://www.swebench.com/) from their official public
+repositories, with no token setup. Sources stay in separate views because their
+scores answer different questions. LiveBench reports category-balanced model
+performance; SWE-bench reports issue resolution by an agent/model system, so
+different harnesses are not equivalent model tests. Source warnings and run-check
+status remain visible.
+
+These boards refresh every two hours and cache successful snapshots across app
+restarts. Network or schema failures keep the previous data with a warning. A
+recent fetch is not evidence of a recent test: the UI distinguishes fetched time,
+suite version, and result dates where available. No benchmark is presented as a
+universal consensus, and missing scores, prices, or license evidence stay unknown.
+
 ---
 
 ## Service self-healing

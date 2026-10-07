@@ -130,7 +130,7 @@
           <div><h2>Benchmark Leaderboard</h2><span id="rankings-updated" class="muted"></span></div>
           <button type="button" id="refresh-rankings" class="btn btn-ghost">Refresh benchmarks</button>
         </div>
-        <div class="benchmark-tools"><label class="search-field"><span class="sr-only">Search models</span><input id="benchmark-search" type="search" placeholder="Search model or creator…" /></label><div class="segmented" role="tablist" aria-label="Benchmark view"><button type="button" class="segment active" data-benchmark-view="tested">All tested</button><button type="button" class="segment" data-benchmark-view="best">Best per model</button></div><div class="segmented" role="tablist" aria-label="Model access"><button type="button" class="segment active" data-access-filter="all">All</button><button type="button" class="segment" data-access-filter="open">Open access</button></div></div>
+        <div class="benchmark-tools"><label class="source-field" for="benchmark-source">Source<select id="benchmark-source"><option value="aa">Artificial Analysis</option></select></label><label class="search-field"><span class="sr-only">Search models</span><input id="benchmark-search" type="search" placeholder="Search model or creator…" /></label><div class="segmented" role="tablist" aria-label="Benchmark view"><button type="button" class="segment active" data-benchmark-view="tested">All tested</button><button type="button" class="segment" data-benchmark-view="best">Best per model</button></div><div class="segmented" role="tablist" aria-label="Model access"><button type="button" class="segment active" data-access-filter="all">All</button><button type="button" class="segment" data-access-filter="open">Open access</button></div></div>
         <div class="table-wrap">
           <table id="rankings-table">
             <thead>
@@ -150,8 +150,9 @@
             <tbody></tbody>
           </table>
         </div>
+        <div id="public-benchmark-view" class="public-benchmark-view hidden"></div>
         <div class="pager" id="rankings-pager"></div>
-        <p class="attribution">
+        <p class="attribution" id="aa-attribution">
           Benchmark data from <a href="https://artificialanalysis.ai/leaderboards/models" target="_blank" rel="noopener">Artificial Analysis</a>
           (free API + public leaderboard). <a href="https://artificialanalysis.ai/methodology" target="_blank" rel="noopener">Read the current methodology</a>.
           The AA Intelligence Index is a weighted evaluation of published tests, not a consensus score; small gaps do not prove superiority. A dash means Artificial Analysis did not publish that metric for the model.

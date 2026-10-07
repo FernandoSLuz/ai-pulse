@@ -128,6 +128,16 @@
     }
 
     function fmt(n) { return n == null || !Number.isFinite(Number(n)) || Number(n) <= 0 ? "—" : Math.round(Number(n) * 10) / 10; }
+    function fmtPrice(n) {
+      if (n == null || !Number.isFinite(Number(n)) || Number(n) < 0) return "—";
+      const amount = Number(n);
+      if (amount > 0 && amount < 0.000001) return "<$0.000001";
+      if (amount === 0) return "$0.00";
+      let text = amount.toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
+      if (!text.includes(".")) text += ".00";
+      else while (text.split(".")[1].length < 2) text += "0";
+      return "$" + text;
+    }
     function escapeHtml(s) {
       return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
@@ -330,7 +340,7 @@
           <td class="c-num c-intel ${sortKey === "intelligence" ? "c-sort-active" : ""}">${fmt(m.intelligence)}</td>
           <td class="c-num ${sortKey === "coding" ? "c-sort-active" : ""}">${fmt(m.coding)}</td>
           <td class="c-num ${sortKey === "math" ? "c-sort-active" : ""}">${fmt(m.math)}</td>
-          <td class="c-num ${sortKey === "priceBlended" ? "c-sort-active" : ""}" title="USD/1M input ${m.priceInput == null ? "—" : m.priceInput} · output ${m.priceOutput == null ? "—" : m.priceOutput} · blended 3:1 ${m.priceBlended == null ? "—" : m.priceBlended}">${m.priceBlended == null || !Number.isFinite(Number(m.priceBlended)) ? "—" : Number(m.priceBlended).toFixed(2)}</td>
+          <td class="c-num ${sortKey === "priceBlended" ? "c-sort-active" : ""}" title="USD/1M input ${m.priceInput == null ? "—" : m.priceInput} · output ${m.priceOutput == null ? "—" : m.priceOutput} · blended 3:1 ${m.priceBlended == null ? "—" : m.priceBlended}">${fmtPrice(m.priceBlended)}</td>
           <td class="c-num ${sortKey === "speed" ? "c-sort-active" : ""}">${fmt(m.speed)}</td>
           <td class="c-acc ${sortKey === "accessibilityScore" ? "c-sort-active" : ""}">${shortAccess(m.accessibility)}</td>
         </tr>`;

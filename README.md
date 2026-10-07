@@ -39,7 +39,7 @@ The published desktop builds currently cover Windows x64, macOS Intel and Apple 
 - **News feed** — curated RSS sources, de-duplicated and scored (lab blogs plus press).
 - **Creators** — YouTube videos from independent AI channels.
 - **Companies** — official lab/company YouTube videos in a separate dashboard panel (not mixed into Creators).
-- **Benchmark table** — Artificial Analysis intelligence, coding, math, price, speed, accessibility. Effort/reasoning variants of the same model collapse into one visible row (aliases keep My Stack highlights on the survivor).
+- **Benchmark sources** — switch between Artificial Analysis, LiveBench, and SWE-bench Verified without API tokens. Each keeps its own scores and methodology. Artificial Analysis includes prices, speed, and evidence-backed access labels, with all tested configurations shown by default and an optional best-per-model view.
 - **AI Analyst** — a briefing on new models, leader changes, and big news.
 - **Ask AI Pulse** — local chat with optional Tavily web search.
 - **Social posts** — official AI accounts when `X_API_BEARER_TOKEN` is configured; without it, profiles remain useful links and no token is needed.
@@ -50,7 +50,7 @@ The published desktop builds currently cover Windows x64, macOS Intel and Apple 
 
 ## Why it stays reliable
 
-The local runtime is configured on first launch with light/balanced profiles selected from detected RAM. Light uses **Qwen3.5 0.8B Q4**, and Balanced uses **Qwen3 1.7B Q8_0**; both are downloaded as pinned, hash-verified GGUF files and served by the pinned llama.cpp CPU runtime. The app works without a model too: deterministic rules keep rankings and briefings usable while a download is pending or cancelled. Benchmarks come from Artificial Analysis's public leaderboard; `AA_API_KEY` is optional enrichment. X posts and Tavily are optional data/search integrations, never model fallbacks. Details in [docs/RELIABILITY.md](docs/RELIABILITY.md).
+The local runtime is configured on first launch with light/balanced profiles selected from detected RAM. Light uses **Qwen3.5 0.8B Q4**, and Balanced uses **Qwen3 1.7B Q8_0**; both are downloaded as pinned, hash-verified GGUF files and served by the pinned llama.cpp CPU runtime. The app works without a model too: deterministic rules keep rankings and briefings usable while a download is pending or cancelled. All three benchmark sources load public data automatically; `AA_API_KEY` is optional enrichment. X posts and Tavily are optional data/search integrations, never model fallbacks. Details in [docs/RELIABILITY.md](docs/RELIABILITY.md).
 
 ## The app is the control center
 

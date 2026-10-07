@@ -77,7 +77,13 @@ Panel {
   // non-numeric, and negative values mean that pricing is unavailable.
   function fmtPrice(n) {
     var value = Number(n)
-    return n === null || n === undefined || n === "" || !isFinite(value) || value < 0 ? "—" : value.toFixed(2)
+    if (n === null || n === undefined || n === "" || !isFinite(value) || value < 0) return "—"
+    if (value > 0 && value < 0.000001) return "<$0.000001"
+    if (value === 0) return "$0.00"
+    var text = value.toFixed(6).replace(/0+$/, "").replace(/\.$/, "")
+    if (text.indexOf(".") < 0) text += ".00"
+    else while (text.split(".")[1].length < 2) text += "0"
+    return "$" + text
   }
   function fmtSpeed(n) { return n > 0 ? String(Math.round(n)) : "—" }
 

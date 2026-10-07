@@ -21,6 +21,11 @@ On Linux the app also writes a few desktop-integration files outside `userData` 
 
 Add these in **Settings → Connections**. No AI provider key is required.
 
+Artificial Analysis, LiveBench, and SWE-bench Verified load automatically without
+tokens or accounts. In the dashboard, use **Benchmarks → Source** to switch between
+their independent leaderboards. An internet connection is needed to refresh data;
+the last successful results remain cached locally.
+
 | Provider | Powers | Get a key | Required? |
 | --- | --- | --- | --- |
 | Artificial Analysis (`AA_API_KEY`) | Benchmark enrichment (rankings work without it) | https://artificialanalysis.ai/insights | Optional |
