@@ -15,20 +15,26 @@ export function computeWinners(models: ModelRecord[]): CategoryWinners {
     return { overall: "", coding: "", math: "", price: "", speed: "", accessibility: "" };
   }
 
-  const byIntelligence = [...models].sort((a, b) => b.intelligence - a.intelligence);
-  const byCoding = [...models].sort((a, b) => b.coding - a.coding);
-  const byMath = [...models].sort((a, b) => b.math - a.math);
-  const byPrice = [...models].filter((m) => m.priceBlended > 0).sort((a, b) => a.priceBlended - b.priceBlended);
-  const bySpeed = [...models].sort((a, b) => b.speed - a.speed);
-  const byAccess = [...models].sort((a, b) => b.accessibilityScore - a.accessibilityScore);
+  // A category with no data must not crown whoever happens to sort first (AA's
+  // public leaderboard stopped publishing the coding/math composites, so those
+  // columns are legitimately empty until a keyed AA_API_KEY enriches them).
+  const topBy = (score: (m: ModelRecord) => number | null, dir: "desc" | "asc" = "desc", allowZero = false): string => {
+    let best: ModelRecord | null = null;
+    for (const m of models) {
+      const value = score(m);
+      if (value === null || !Number.isFinite(value) || value < 0 || (value === 0 && !allowZero)) continue;
+      if (!best || (dir === "desc" ? value > score(best)! : value < score(best)!)) best = m;
+    }
+    return best?.slug ?? "";
+  };
 
   return {
-    overall: byIntelligence[0]?.slug ?? "",
-    coding: byCoding[0]?.slug ?? "",
-    math: byMath[0]?.slug ?? "",
-    price: byPrice[0]?.slug ?? "",
-    speed: bySpeed[0]?.slug ?? "",
-    accessibility: byAccess[0]?.slug ?? "",
+    overall: topBy((m) => m.intelligence),
+    coding: topBy((m) => m.coding),
+    math: topBy((m) => m.math),
+    price: topBy((m) => m.priceBlended, "asc", true),
+    speed: topBy((m) => m.speed),
+    accessibility: topBy((m) => m.accessibilityScore),
   };
 }
 
@@ -40,10 +46,12 @@ export function buildRankingsSnapshot(
   const collapsed = collapseVariants(sorted);
   const visible = collapsed.models;
   const health = evaluatePollHealth(configuredPollMs);
-  const updatedAt = getLastPollAt() ?? new Date().toISOString();
+  const updatedAt = getLastPollAt();
   return {
     models: withModelLinks(visible),
     winners: computeWinners(visible),
+    testedModels: withModelLinks(sorted),
+    testedWinners: computeWinners(sorted),
     updatedAt,
     variantAliases: collapsed.variantAliases,
     variantsCollapsed: collapsed.variantsCollapsed,

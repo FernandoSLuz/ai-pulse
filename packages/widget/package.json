@@ -1,10 +1,10 @@
 {
   "name": "@ai-pulse/widget",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "productName": "AI Pulse",
   "desktopName": "ai-pulse.desktop",
   "private": true,
-  "description": "AI Pulse desktop app — tray, server supervisor, settings, and the leaderboard widget.",
+  "description": "AI Pulse desktop app \u2014 tray, server supervisor, settings, and the leaderboard widget.",
   "homepage": "https://github.com/FernandoSLuz/ai-pulse",
   "author": {
     "name": "Fernando Silva da Luz",
@@ -19,6 +19,8 @@
     "dist": "npm run build && electron-builder --win",
     "dist:ci": "npm run build && electron-builder --win --publish never",
     "dist:dir": "npm run build && electron-builder --win --dir",
+    "dist:mac": "npm run build && electron-builder --mac --publish never",
+    "dist:mac:dir": "npm run build && electron-builder --mac --dir --publish never",
     "dist:linux": "npm run build && electron-builder --linux",
     "dist:linux:ci": "npm run build && electron-builder --linux --publish never",
     "dist:linux:dir": "npm run build && electron-builder --linux --dir",

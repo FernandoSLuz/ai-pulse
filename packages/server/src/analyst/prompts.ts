@@ -4,13 +4,46 @@ export function buildAnalystPrompt(context: {
   diff: {
     newModelSlugs: string[];
     leaderChanges: string[];
-    topNews: { title: string; source: string; score: number }[];
+    topNews: { id?: string; title: string; source: string; score: number }[];
   };
   topModels: ModelRecord[];
   profile: MyStackProfile;
   upgradeCandidates: UpgradeCandidate[];
 }): string {
-  return `You are AI Pulse analyst. Summarize the latest AI model landscape for a technical user.
+  const models = context.topModels.slice(0, 10).map((m) => ({
+    slug: m.slug,
+    name: m.name,
+    creator: m.creator,
+    intelligence: m.intelligence,
+    coding: m.coding,
+    math: m.math,
+    priceBlended: m.priceBlended,
+    speed: m.speed,
+    accessibility: m.accessibility,
+    license: m.license ?? null,
+  }));
+  const profile = {
+    entries: context.profile.entries.slice(0, 5).map((e) => ({
+      role: e.role,
+      model: e.modelName || e.modelSlug,
+      areas: e.areas,
+      providers: e.providers,
+    })),
+    budgetTier: context.profile.budgetTier,
+    priorities: [context.profile.priorityCoding, context.profile.priorityReasoning, context.profile.prioritySpeed, context.profile.priorityCost],
+    roleGaps: context.profile.roleGaps.slice(0, 3).map((g) => ({ role: g.role, slug: g.modelSlug, name: g.modelName, reason: g.reason })),
+  };
+  const compact = {
+    diff: {
+      newModelSlugs: context.diff.newModelSlugs.slice(0, 8),
+      leaderChanges: context.diff.leaderChanges.slice(0, 5),
+      topNews: context.diff.topNews.slice(0, 5),
+    },
+    models,
+    profile,
+    upgrades: context.upgradeCandidates.slice(0, 6).map((c) => ({ slug: c.slug, name: c.name, score: c.score, intelligenceDelta: c.intelligenceDelta, priceDelta: c.priceDelta, reason: c.reason })),
+  };
+  return `You are AI Pulse analyst. Summarize the latest AI model landscape for a technical user. Write all output in English.
 
 Return ONLY valid JSON with this exact shape:
 {
@@ -20,21 +53,25 @@ Return ONLY valid JSON with this exact shape:
   "newModels": ["model name with key stat"],
   "yourStack": "paragraph comparing user's current model to landscape",
   "upgradeSuggestion": "optional suggestion or null",
-  "upgradeSlug": "slug of suggested model or null"
+  "upgradeSlug": "slug of suggested model or null",
+  "headlineNewsId": "optional exact news id or null",
+  "breakingNewsIds": ["optional exact news ids"]
 }
 
 Context:
-${JSON.stringify(context, null, 2)}
+${JSON.stringify(compact)}
 
-Be concise, factual, and actionable. Reference specific models and scores.
-If upgradeCandidates include a "missing a … role" reason, prioritize telling the user which stack role they lack and the SOTA pick. For Free-role gaps, prefer open/local models they can wire into Cursor via Override OpenAI Base URL (Ollama etc.) for unlimited use, and mention that setup briefly.`;
+Be concise, factual, and actionable. Use only numbers, prices, model slugs, licenses, and news IDs supplied in Context. A null price means not published; do not turn it into zero. Do not call a model open source unless the supplied license/accessibility explicitly says so; unknown is unknown.
+The deterministic application validates leader, new-model stats, prices, licenses, and upgradeSlug. Keep those fields grounded. You may select headlineNewsId/breakingNewsIds only from Context.diff.topNews, and may write a short clearly AI-authored comment in headline/breaking around those exact titles.
+If upgradeCandidates include a "missing a … role" reason, prioritize telling the user which stack role they lack and the SOTA pick. Do not claim that a model is compatible with a particular client or endpoint unless Context explicitly provides that fact.`;
 }
 
 export function buildAiPickPrompt(
   period: NewsPeriod,
   items: { id: string; title: string; source: string; score: number; summary: string }[],
 ): string {
-  return `You are AI Pulse news curator. From the candidate stories for period "${period}", pick the most groundbreaking AI news only.
+  const compact = items.slice(0, 20).map((item) => ({ id: item.id, title: item.title.slice(0, 180), source: item.source.slice(0, 80), score: item.score, summary: item.summary.slice(0, 120) }));
+  return `You are AI Pulse news curator. From the candidate stories for period "${period}", pick the most groundbreaking AI news only. Use English for reasons.
 
 Groundbreaking means: major model launches, frontier capability jumps, significant lab breakthroughs, important benchmark SOTA shifts, or consequential policy/safety events. Skip routine tutorials, minor tool roundups, and recycled hype.
 
@@ -48,13 +85,27 @@ Return ONLY valid JSON:
 Pick at most 8 items. Prefer primary lab sources when stories overlap. Use only IDs from the candidate list.
 
 Candidates:
-${JSON.stringify(items, null, 2)}`;
+${JSON.stringify(compact)}`;
 }
 
 export function buildBatchedAiPickPrompt(
   byPeriod: Record<string, { id: string; title: string; source: string; score: number; summary: string }[]>,
 ): string {
-  return `You are AI Pulse news curator. For each time period, pick the most groundbreaking AI news only.
+  const seen = new Set<string>();
+  const items: { id: string; title: string; source: string; score: number; summary: string }[] = [];
+  const membership: Record<string, string[]> = {};
+  for (const [period, periodItems] of Object.entries(byPeriod)) {
+    membership[period] = [];
+    for (const item of periodItems) {
+      membership[period].push(item.id);
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+      if (items.length < 20) items.push({ ...item, title: item.title.slice(0, 180), source: item.source.slice(0, 80), summary: item.summary.slice(0, 120) });
+    }
+  }
+  const available = new Set(items.map((item) => item.id));
+  for (const period of Object.keys(membership)) membership[period] = membership[period].filter((id) => available.has(id));
+  return `You are AI Pulse news curator. For each time period, pick the most groundbreaking AI news only. Use English for reasons.
 
 Groundbreaking means: major model launches, frontier capability jumps, significant lab breakthroughs, important benchmark SOTA shifts, or consequential policy/safety events. Skip routine tutorials, minor tool roundups, and recycled hype.
 
@@ -69,10 +120,12 @@ Return ONLY valid JSON:
   }
 }
 
-For each period: at most 8 picks, use only IDs from that period's candidate list. Empty picks arrays are fine.
+For each period: at most 5 picks, use only IDs listed for that period in membership. Empty picks arrays are valid and must remain empty when nothing is groundbreaking. Never invent an ID or repeat a story unnecessarily.
 
-Candidates by period:
-${JSON.stringify(byPeriod, null, 2)}`;
+Unique candidates (each story appears once):
+${JSON.stringify(items)}
+Membership by period:
+${JSON.stringify(membership)}`;
 }
 
 export function buildRulesAiPicks(
@@ -133,7 +186,7 @@ export function buildRulesBriefing(context: {
   const newModels = context.diff.newModelSlugs
     .map((slug) => {
       const m = context.topModels.find((x) => x.slug === slug);
-      return m ? `${m.name} — intel ${fmt(m.intelligence)}, $${m.priceBlended.toFixed(2)}/1M` : slug;
+      return m ? `${m.name} — intel ${fmt(m.intelligence)}, ${m.priceBlended === null ? "price n/a" : `$${m.priceBlended.toFixed(2)}/1M`}` : slug;
     })
     .slice(0, 5);
 

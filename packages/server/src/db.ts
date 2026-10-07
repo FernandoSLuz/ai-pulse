@@ -1,7 +1,9 @@
 import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { normalizeUrl, dedupeByCredibility, hasAiSubject, scoreRelevance } from "./fetchers/rss-aggregator.js";
 import type {
   AnalystBriefing,
   ModelRecord,
@@ -13,6 +15,8 @@ import type {
   StackEntry,
   StackRole,
   VideoItem,
+  SocialProfile,
+  SocialPost,
 } from "./types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -54,6 +58,10 @@ function initSchema(database: Database.Database): void {
       latency REAL,
       accessibility TEXT,
       accessibility_score REAL,
+      license TEXT,
+      license_url TEXT,
+      weights_url TEXT,
+      price_source_url TEXT,
       fetched_at TEXT
     );
 
@@ -67,6 +75,15 @@ function initSchema(database: Database.Database): void {
       relevance_score REAL,
       category TEXT,
       fetched_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS news_ai_picks (
+      news_id TEXT NOT NULL,
+      period TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      curated_at TEXT NOT NULL,
+      PRIMARY KEY (news_id, period),
+      FOREIGN KEY (news_id) REFERENCES news(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS user_stack (
@@ -127,10 +144,33 @@ function initSchema(database: Database.Database): void {
       kind TEXT DEFAULT 'creator',
       fetched_at TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS social_profiles (
+      handle TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      user_id TEXT,
+      profile_url TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'user',
+      enabled INTEGER NOT NULL DEFAULT 1,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS social_posts (
+      id TEXT PRIMARY KEY,
+      text TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      author_handle TEXT NOT NULL,
+      author_name TEXT NOT NULL,
+      url TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'x-api',
+      fetched_at TEXT NOT NULL
+    );
   `);
 
   migrateNewsColumns(database);
   migrateVideoColumns(database);
+  migrateModelColumns(database);
 
   const stack = database.prepare("SELECT id FROM user_stack WHERE id = 1").get();
   if (!stack) {
@@ -161,6 +201,112 @@ function initSchema(database: Database.Database): void {
   }
 }
 
+function migrateModelColumns(database: Database.Database): void {
+  const cols = database.prepare("PRAGMA table_info(models)").all() as { name: string }[];
+  const names = new Set(cols.map((c) => c.name));
+  const add = (name: string, ddl: string) => { if (!names.has(name)) database.exec(`ALTER TABLE models ADD COLUMN ${ddl}`); };
+  add("license", "license TEXT");
+  add("license_url", "license_url TEXT");
+  add("weights_url", "weights_url TEXT");
+  add("price_source_url", "price_source_url TEXT");
+  // Rows written before source provenance existed cannot safely retain a
+  // zero-as-free or stale price. A fresh AA poll repopulates them.
+  if (!database.prepare("SELECT value FROM meta WHERE key = 'model_evidence_v2'").get()) {
+    database.transaction(() => {
+      database.prepare("UPDATE models SET price_input = NULL, price_output = NULL, price_blended = NULL WHERE price_source_url IS NULL").run();
+      // Older releases inferred access without retaining source evidence.
+      // Fresh polls restore verified labels; unknown is safer while offline.
+      database.prepare(`UPDATE models SET accessibility = 'Unknown', accessibility_score = 0,
+        license = NULL, license_url = NULL, weights_url = NULL`).run();
+      database.prepare("INSERT INTO meta(key,value) VALUES('model_evidence_v2',?)").run(new Date().toISOString());
+    })();
+  }
+}
+
+export function getSocialProfiles(includeDisabled = false): SocialProfile[] {
+  coalesceSocialProfileHandles();
+  const rows = getDb().prepare(`SELECT * FROM social_profiles ${includeDisabled ? "" : "WHERE enabled = 1"} ORDER BY source, name`).all() as Record<string, unknown>[];
+  return rows.map((r) => ({
+    handle: String(r.handle), name: String(r.name), description: (r.description as string) || undefined,
+    userId: (r.user_id as string) || undefined, profileUrl: String(r.profile_url),
+    source: r.source === "default" ? "default" : "user", enabled: Boolean(r.enabled),
+  }));
+}
+
+function coalesceSocialProfileHandles(): void {
+  const database = getDb();
+  const rows = database.prepare("SELECT rowid, * FROM social_profiles ORDER BY enabled DESC, source DESC, updated_at DESC").all() as Array<Record<string, unknown> & { rowid: number }>;
+  const groups = new Map<string, typeof rows>();
+  for (const row of rows) {
+    const key = String(row.handle).trim().replace(/^@/, "").toLowerCase();
+    if (!key) continue;
+    const group = groups.get(key) ?? [];
+    group.push(row);
+    groups.set(key, group);
+  }
+  const tx = database.transaction(() => {
+    for (const [handle, group] of groups) {
+      const winner = group[0];
+      if (group.length === 1 && winner.handle === handle) continue;
+      for (const duplicate of group.slice(1)) database.prepare("DELETE FROM social_profiles WHERE rowid = ?").run(duplicate.rowid);
+      database.prepare(`UPDATE social_profiles SET handle = ?, name = ?, description = ?, user_id = ?, profile_url = ?, source = ?, enabled = ?, updated_at = ? WHERE rowid = ?`).run(
+        handle,
+        winner.name,
+        winner.description ?? null,
+        winner.user_id ?? null,
+        winner.profile_url,
+        winner.source,
+        winner.enabled,
+        winner.updated_at,
+        winner.rowid,
+      );
+    }
+  });
+  tx();
+}
+
+export function upsertSocialProfiles(profiles: SocialProfile[]): void {
+  coalesceSocialProfileHandles();
+  const stmt = getDb().prepare(`INSERT INTO social_profiles (handle,name,description,user_id,profile_url,source,enabled,updated_at)
+    VALUES (@handle,@name,@description,@userId,@profileUrl,@source,@enabled,@updatedAt)
+    ON CONFLICT(handle) DO UPDATE SET name=excluded.name, description=excluded.description, user_id=excluded.user_id,
+      profile_url=excluded.profile_url, source=excluded.source, enabled=excluded.enabled, updated_at=excluded.updated_at`);
+  const now = new Date().toISOString();
+  const tx = getDb().transaction((items: SocialProfile[]) => items.forEach((p) => {
+    const handle = p.handle.trim().replace(/^@/, "").toLowerCase();
+    const existing = getDb().prepare("SELECT rowid FROM social_profiles WHERE lower(handle) = ? LIMIT 1").get(handle) as { rowid: number } | undefined;
+    if (existing) {
+      getDb().prepare(`UPDATE social_profiles SET handle = ?, name = ?, description = ?, user_id = ?, profile_url = ?, source = ?, enabled = ?, updated_at = ? WHERE rowid = ?`).run(
+        handle, p.name, p.description ?? null, p.userId ?? null, p.profileUrl, p.source, p.enabled ? 1 : 0, now, existing.rowid,
+      );
+    } else {
+      stmt.run({ ...p, handle, description: p.description ?? null, userId: p.userId ?? null, enabled: p.enabled ? 1 : 0, updatedAt: now });
+    }
+  }));
+  tx(profiles);
+}
+
+export function deleteSocialProfile(handle: string): boolean {
+  return getDb().prepare("UPDATE social_profiles SET enabled = 0, updated_at = ? WHERE lower(handle) = lower(?)").run(new Date().toISOString(), handle.trim().replace(/^@/, "")).changes > 0;
+}
+
+export function getSocialPosts(limit = 100): SocialPost[] {
+  const rows = getDb().prepare(`SELECT s.* FROM social_posts s JOIN social_profiles p
+    ON lower(p.handle) = lower(s.author_handle) AND p.enabled = 1
+    ORDER BY julianday(s.created_at) DESC LIMIT ?`).all(Math.min(200, Math.max(1, Math.floor(limit) || 100))) as Record<string, unknown>[];
+  return rows.map((r) => ({ id: String(r.id), text: String(r.text), createdAt: String(r.created_at), authorHandle: String(r.author_handle), authorName: String(r.author_name), url: String(r.url), source: "x-api" }));
+}
+
+export function replaceSocialPosts(posts: SocialPost[], fetchedAt = new Date().toISOString()): void {
+  const stmt = getDb().prepare(`INSERT INTO social_posts (id,text,created_at,author_handle,author_name,url,source,fetched_at)
+    VALUES (@id,@text,@createdAt,@authorHandle,@authorName,@url,'x-api',@fetchedAt)
+    ON CONFLICT(id) DO UPDATE SET text=excluded.text, created_at=excluded.created_at, author_handle=excluded.author_handle,
+      author_name=excluded.author_name, url=excluded.url, fetched_at=excluded.fetched_at`);
+  const tx = getDb().transaction((items: SocialPost[]) => items.forEach((p) => stmt.run({ ...p, authorHandle: p.authorHandle.trim().replace(/^@/, "").toLowerCase(), fetchedAt })));
+  tx(posts);
+  getDb().prepare("DELETE FROM social_posts WHERE julianday(fetched_at) < julianday('now','-30 days')").run();
+}
+
 function migrateNewsColumns(database: Database.Database): void {
   const cols = database.prepare("PRAGMA table_info(news)").all() as { name: string }[];
   const names = new Set(cols.map((c) => c.name));
@@ -173,6 +319,25 @@ function migrateNewsColumns(database: Database.Database): void {
   add("ai_pick_reason", "ai_pick_reason TEXT");
   add("ai_pick_period", "ai_pick_period TEXT");
   add("ai_curated_at", "ai_curated_at TEXT");
+  add("canonical_url", "canonical_url TEXT");
+  const rows = database.prepare("SELECT id, link, canonical_url FROM news WHERE canonical_url IS NULL OR canonical_url = ''").all() as { id: string; link: string }[];
+  const update = database.prepare("UPDATE news SET canonical_url = ? WHERE id = ?");
+  for (const row of rows) {
+    const canonical = canonicalNewsUrl(row.link);
+    if (canonical) update.run(canonical, row.id);
+  }
+  if (!database.prepare("SELECT value FROM meta WHERE key = 'news_picks_v2'").get()) {
+    database.exec(`INSERT OR IGNORE INTO news_ai_picks (news_id, period, reason, curated_at)
+      SELECT id, COALESCE(ai_pick_period, 'all'), COALESCE(ai_pick_reason, ''), COALESCE(ai_curated_at, datetime('now'))
+      FROM news WHERE ai_pick = 1`);
+    database.prepare("INSERT INTO meta(key,value) VALUES('news_picks_v2','1')").run();
+  }
+}
+
+function canonicalNewsUrl(value: string): string { return normalizeUrl(value); }
+
+function canonicalNewsId(value: string): string {
+  return createHash("sha256").update(canonicalNewsUrl(value)).digest("hex");
 }
 
 function migrateVideoColumns(database: Database.Database): void {
@@ -209,15 +374,17 @@ export function upsertModels(models: ModelRecord[]): string[] {
 
   const stmt = database.prepare(`
     INSERT INTO models (slug, name, creator, intelligence, coding, math, price_input, price_output,
-      price_blended, speed, latency, accessibility, accessibility_score, fetched_at)
+      price_blended, speed, latency, accessibility, accessibility_score, license, license_url, weights_url, price_source_url, fetched_at)
     VALUES (@slug, @name, @creator, @intelligence, @coding, @math, @priceInput, @priceOutput,
-      @priceBlended, @speed, @latency, @accessibility, @accessibilityScore, @fetchedAt)
+      @priceBlended, @speed, @latency, @accessibility, @accessibilityScore, @license, @licenseUrl, @weightsUrl, @priceSourceUrl, @fetchedAt)
     ON CONFLICT(slug) DO UPDATE SET
       name = excluded.name, creator = excluded.creator, intelligence = excluded.intelligence,
       coding = excluded.coding, math = excluded.math, price_input = excluded.price_input,
       price_output = excluded.price_output, price_blended = excluded.price_blended,
       speed = excluded.speed, latency = excluded.latency, accessibility = excluded.accessibility,
-      accessibility_score = excluded.accessibility_score, fetched_at = excluded.fetched_at
+      accessibility_score = excluded.accessibility_score, license = excluded.license,
+      license_url = excluded.license_url, weights_url = excluded.weights_url, fetched_at = excluded.fetched_at
+      ,price_source_url = excluded.price_source_url
   `);
 
   const tx = database.transaction((items: ModelRecord[]) => {
@@ -235,6 +402,29 @@ export function getAllModels(): ModelRecord[] {
   return rows.map(rowToModel);
 }
 
+/**
+ * Delete the given slugs, returning the ones that actually existed. Used to
+ * clear rows a source stopped reporting (legacy demo data, retired models).
+ */
+export function deleteModelsBySlugs(slugs: string[]): string[] {
+  if (slugs.length === 0) return [];
+  const database = getDb();
+  const stmt = database.prepare("DELETE FROM models WHERE slug = ?");
+  const removed: string[] = [];
+  const tx = database.transaction((items: string[]) => {
+    for (const slug of items) {
+      if (stmt.run(slug).changes > 0) removed.push(slug);
+    }
+  });
+  tx(slugs);
+  return removed;
+}
+
+/** Every slug currently persisted (used to compute what a full feed obsolete). */
+export function listModelSlugs(): string[] {
+  return (getDb().prepare("SELECT slug FROM models").all() as { slug: string }[]).map((r) => r.slug);
+}
+
 export function getModelBySlug(slug: string): ModelRecord | null {
   const row = getDb().prepare("SELECT * FROM models WHERE slug = ?").get(slug) as Record<string, unknown> | undefined;
   return row ? rowToModel(row) : null;
@@ -248,13 +438,17 @@ function rowToModel(row: Record<string, unknown>): ModelRecord {
     intelligence: (row.intelligence as number) ?? 0,
     coding: (row.coding as number) ?? 0,
     math: (row.math as number) ?? 0,
-    priceInput: (row.price_input as number) ?? 0,
-    priceOutput: (row.price_output as number) ?? 0,
-    priceBlended: (row.price_blended as number) ?? 0,
+    priceInput: (row.price_input as number | null) ?? null,
+    priceOutput: (row.price_output as number | null) ?? null,
+    priceBlended: (row.price_blended as number | null) ?? null,
     speed: (row.speed as number) ?? 0,
     latency: (row.latency as number) ?? 0,
     accessibility: (row.accessibility as string) ?? "Unknown",
     accessibilityScore: (row.accessibility_score as number) ?? 0,
+    license: (row.license as string) ?? null,
+    licenseUrl: (row.license_url as string) ?? null,
+    weightsUrl: (row.weights_url as string) ?? null,
+    priceSourceUrl: (row.price_source_url as string) ?? null,
     fetchedAt: (row.fetched_at as string) ?? "",
   };
 }
@@ -263,8 +457,8 @@ export function upsertNews(items: NewsItem[]): NewsItem[] {
   const database = getDb();
   const newItems: NewsItem[] = [];
   const stmt = database.prepare(`
-    INSERT INTO news (id, title, link, source, published_at, summary, relevance_score, category, fetched_at, tier, cluster_id)
-    VALUES (@id, @title, @link, @source, @publishedAt, @summary, @relevanceScore, @category, datetime('now'), @tier, @clusterId)
+    INSERT INTO news (id, title, link, source, published_at, summary, relevance_score, category, fetched_at, tier, cluster_id, canonical_url)
+    VALUES (@id, @title, @link, @source, @publishedAt, @summary, @relevanceScore, @category, datetime('now'), @tier, @clusterId, @canonicalUrl)
     ON CONFLICT(id) DO UPDATE SET
       title = excluded.title,
       link = excluded.link,
@@ -275,16 +469,22 @@ export function upsertNews(items: NewsItem[]): NewsItem[] {
       category = excluded.category,
       fetched_at = excluded.fetched_at,
       tier = excluded.tier,
-      cluster_id = excluded.cluster_id
+      cluster_id = excluded.cluster_id,
+      canonical_url = excluded.canonical_url
   `);
 
   const exists = database.prepare("SELECT id FROM news WHERE id = ?");
+  const existingByCanonical = database.prepare("SELECT id FROM news WHERE canonical_url = ?");
 
   const tx = database.transaction((news: NewsItem[]) => {
     for (const item of news) {
-      const isNew = !exists.get(item.id);
+      const canonicalUrl = canonicalNewsUrl(item.link) || null;
+      const canonicalId = canonicalUrl ? canonicalNewsId(canonicalUrl) : item.id;
+      const existingCanonical = canonicalUrl ? existingByCanonical.get(canonicalUrl) as { id: string } | undefined : undefined;
+      const persistId = existingCanonical?.id ?? canonicalId;
+      const isNew = !exists.get(persistId);
       stmt.run({
-        id: item.id,
+        id: persistId,
         title: item.title,
         link: item.link,
         source: item.source,
@@ -294,8 +494,9 @@ export function upsertNews(items: NewsItem[]): NewsItem[] {
         category: item.category,
         tier: item.tier ?? 99,
         clusterId: item.clusterId ?? null,
+        canonicalUrl,
       });
-      if (isNew) newItems.push(item);
+      if (isNew) newItems.push({ ...item, id: persistId });
     }
   });
   tx(items);
@@ -303,67 +504,50 @@ export function upsertNews(items: NewsItem[]): NewsItem[] {
 }
 
 export function getNews(
-  limit = 50,
-  category?: string,
-  period?: NewsPeriod,
-  view?: "all" | "ai_pick",
+  limit = 50, category?: string, period?: NewsPeriod, view?: "all" | "ai_pick",
 ): NewsItem[] {
   const database = getDb();
-  const since = periodSince(period);
-  const clauses: string[] = [];
-  const params: unknown[] = [];
-
-  if (category && category !== "all") {
-    clauses.push("category = ?");
-    params.push(category);
-  }
-  if (since) {
-    clauses.push("published_at >= ?");
-    params.push(since);
-  }
-  if (view === "ai_pick") {
-    clauses.push("ai_pick = 1");
-    // Short windows filter by publish time only; longer periods keep curated period tags.
-    if (period && period !== "all" && period !== "hour" && period !== "12h") {
-      clauses.push("(ai_pick_period = ? OR ai_pick_period IS NULL OR ai_pick_period = 'all')");
-      params.push(period);
-    }
-  }
-
-  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
-  const order =
-    view === "ai_pick"
-      ? "ORDER BY ai_curated_at DESC, relevance_score DESC, published_at DESC"
-      : "ORDER BY relevance_score DESC, published_at DESC";
-  params.push(limit);
-
-  const rows = database
-    .prepare(`SELECT * FROM news ${where} ${order} LIMIT ?`)
-    .all(...params) as Record<string, unknown>[];
-  return rows.map(rowToNews);
+  const targetPeriod = period && period !== "all" ? period : "all";
+  const since = periodSince(period) ?? new Date(Date.now() - 90 * 86400_000).toISOString();
+  const rows = database.prepare(`
+    SELECT n.*, p.reason AS pick_reason, p.curated_at AS pick_curated_at
+    FROM news n LEFT JOIN news_ai_picks p ON p.news_id = n.id AND p.period = ?
+    WHERE julianday(n.published_at) >= julianday(?)
+      AND julianday(n.published_at) <= julianday('now', '+5 minutes')
+      ${view === "ai_pick" ? "AND p.news_id IS NOT NULL" : ""}
+    ORDER BY julianday(n.published_at) DESC LIMIT 2000
+  `).all(targetPeriod, since) as Record<string, unknown>[];
+  const items = rows.map((row) => {
+    const item = rowToNews(row);
+    const scored = scoreRelevance(item.title, item.summary);
+    return {
+      ...item, relevanceScore: scored.score, category: scored.category,
+      aiPick: row.pick_curated_at != null,
+      aiPickReason: row.pick_reason == null ? null : String(row.pick_reason),
+      aiPickPeriod: row.pick_curated_at == null ? null : targetPeriod,
+      aiCuratedAt: row.pick_curated_at == null ? null : String(row.pick_curated_at),
+    } as NewsItem;
+  }).filter((item) => normalizeUrl(item.link) && hasAiSubject(item.title, item.summary)
+    && (!category || category === "all" || item.category === category));
+  return dedupeByCredibility(items).slice(0, Math.min(200, Math.max(1, Math.floor(limit) || 50)));
 }
 
 export function clearAiPicksForPeriod(period: NewsPeriod): void {
-  getDb()
-    .prepare(
-      `UPDATE news SET ai_pick = 0, ai_pick_reason = NULL, ai_pick_period = NULL, ai_curated_at = NULL
-       WHERE ai_pick_period = ? OR (ai_pick = 1 AND ? = 'all')`,
-    )
-    .run(period, period);
+  const database = getDb();
+  database.prepare("DELETE FROM news_ai_picks WHERE period = ?").run(period);
+  database.prepare("UPDATE news SET ai_pick = 0, ai_pick_reason = NULL, ai_pick_period = NULL, ai_curated_at = NULL WHERE NOT EXISTS (SELECT 1 FROM news_ai_picks p WHERE p.news_id = news.id)").run();
 }
 
 export function setAiPicks(
   picks: { id: string; reason: string; period: NewsPeriod }[],
 ): void {
   const database = getDb();
-  const stmt = database.prepare(`
-    UPDATE news SET ai_pick = 1, ai_pick_reason = ?, ai_pick_period = ?, ai_curated_at = ?
-    WHERE id = ?
-  `);
+  const stmt = database.prepare(`INSERT INTO news_ai_picks (news_id, period, reason, curated_at) VALUES (?, ?, ?, ?)
+    ON CONFLICT(news_id, period) DO UPDATE SET reason = excluded.reason, curated_at = excluded.curated_at`);
   const now = new Date().toISOString();
   const tx = database.transaction(() => {
     for (const p of picks) {
-      stmt.run(p.reason, p.period, now, p.id);
+      stmt.run(p.id, p.period, p.reason, now);
     }
   });
   tx();
@@ -715,7 +899,9 @@ export function saveBriefing(briefing: Omit<AnalystBriefing, "id">): AnalystBrie
 
 export function getLatestBriefing(): AnalystBriefing | null {
   const row = getDb().prepare(
-    "SELECT * FROM analyst_briefings ORDER BY id DESC LIMIT 1"
+    `SELECT * FROM analyst_briefings
+     WHERE julianday(created_at) >= julianday(COALESCE((SELECT value FROM meta WHERE key='model_evidence_v2'), '1970-01-01'))
+     ORDER BY id DESC LIMIT 1`
   ).get() as Record<string, unknown> | undefined;
   if (!row) return null;
   return {

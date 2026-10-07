@@ -16,15 +16,63 @@ let state = {
   newsCategory: "all",
   sortKey: "intelligence",
   sortDir: "desc",
+  view: "overview",
+  social: { profiles: [], posts: [] },
+  pages: { news: 1, aipicks: 1, creators: 1, companies: 1, rankings: 1, social: 1 },
+  benchmarkQuery: "",
+  benchmarkView: "tested",
+  benchmarkAccess: "all",
+  benchmarkSource: "aa",
+  publicBoards: [],
+  videoKind: "creator",
 };
+
+const PAGE_SIZE = { news: 5, aipicks: 5, creators: 4, companies: 4, rankings: 10, social: 10 };
+
+function renderPager(id, key, total, size = PAGE_SIZE[key]) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const pages = Math.max(1, Math.ceil(total / size));
+  state.pages[key] = Math.min(state.pages[key], pages);
+  if (pages <= 1) { el.innerHTML = ""; return; }
+  el.innerHTML = `<button type="button" class="btn btn-ghost btn-sm" data-page="prev" ${state.pages[key] === 1 ? "disabled" : ""}>Previous</button><span>Page ${state.pages[key]} of ${pages}</span><button type="button" class="btn btn-ghost btn-sm" data-page="next" ${state.pages[key] === pages ? "disabled" : ""}>Next</button>`;
+  el.querySelectorAll("[data-page]").forEach((button) => button.addEventListener("click", () => { state.pages[key] += button.dataset.page === "next" ? 1 : -1; ({ news: renderNews, aipicks: renderAiPicks, creators: renderCreators, companies: renderCompanyVideos, rankings: renderRankings, social: renderSocial }[key])(); }));
+}
+
+function pageItems(items, key) {
+  const size = PAGE_SIZE[key];
+  const start = (state.pages[key] - 1) * size;
+  return items.slice(start, start + size);
+}
+
+const VIEW_COPY = {
+  overview: ["Overview", "A calm read of what changed and what deserves your attention."],
+  news: ["News", "Signals and picks, with room to read what matters."],
+  videos: ["Videos", "Creators and official labs, separated for quick scanning."],
+  benchmarks: ["Benchmarks", "Compare the models that matter by intelligence, coding, speed, and access."],
+  social: ["X / Twitter", "Follow the people shaping AI and keep the useful posts close to your radar."],
+};
+
+function setView(view) {
+  if (!VIEW_COPY[view]) return;
+  state.view = view;
+  document.body.dataset.view = view;
+  document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === view));
+  const [title, description] = VIEW_COPY[view];
+  document.getElementById("view-title").textContent = title;
+  document.getElementById("view-description").textContent = description;
+  if (view === "overview" || view === "news") { renderNews(); renderAiPicks(); }
+  if (view === "videos") { renderCreators(); renderCompanyVideos(); }
+  if (view === "social") loadSocial().catch((err) => console.warn("Social feed unavailable", err));
+}
 
 const SORTABLE = {
   name: { key: "name", type: "string", defaultDir: "asc", label: "Model" },
   creator: { key: "creator", type: "string", defaultDir: "asc", label: "Creator" },
-  intelligence: { key: "intelligence", type: "number", defaultDir: "desc", label: "Intel" },
+  intelligence: { key: "intelligence", type: "number", defaultDir: "desc", label: "AA Intelligence Index" },
   coding: { key: "coding", type: "number", defaultDir: "desc", label: "Code" },
   math: { key: "math", type: "number", defaultDir: "desc", label: "Math" },
-  priceBlended: { key: "priceBlended", type: "number", defaultDir: "asc", label: "Price" },
+  priceBlended: { key: "priceBlended", type: "number", defaultDir: "asc", label: "$/1M in/out" },
   speed: { key: "speed", type: "number", defaultDir: "desc", label: "Speed" },
   accessibilityScore: { key: "accessibilityScore", type: "number", defaultDir: "desc", label: "Access" },
 };
@@ -46,8 +94,18 @@ function sortModels(models) {
       const vb = String(b[col.key] ?? "").toLowerCase();
       return state.sortDir === "asc" ? va.localeCompare(vb) : vb.localeCompare(va);
     }
-    const va = Number(a[col.key]) || 0;
-    const vb = Number(b[col.key]) || 0;
+    const ar = a[col.key];
+    const br = b[col.key];
+    const av = Number(ar);
+    const bv = Number(br);
+    const aMissing = ar == null || ar === "" || !Number.isFinite(av);
+    const bMissing = br == null || br === "" || !Number.isFinite(bv);
+    if (aMissing || bMissing) {
+      if (aMissing && bMissing) return 0;
+      return aMissing ? 1 : -1;
+    }
+    const va = av;
+    const vb = bv;
     return state.sortDir === "asc" ? va - vb : vb - va;
   });
 }
@@ -79,6 +137,7 @@ function onSortHeaderClick(key) {
 function connectWs() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   const ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onopen = () => { const el = document.getElementById("connection-status"); if (el) el.innerHTML = "<i></i> Live updates"; };
   ws.addEventListener("message", (ev) => {
     try {
       const msg = JSON.parse(ev.data);
@@ -92,6 +151,10 @@ function connectWs() {
     const msg = JSON.parse(ev.data);
     if (msg.type === "rankings") {
       state.rankings = msg.payload;
+      renderRankings();
+    }
+    if (msg.type === "public_benchmarks") {
+      setPublicBoards(msg.payload?.boards);
       renderRankings();
     }
     if (msg.type === "news") {
@@ -135,7 +198,7 @@ function connectWs() {
     }
   };
 
-  ws.onclose = () => setTimeout(connectWs, 3000);
+  ws.onclose = () => { const el = document.getElementById("connection-status"); if (el) el.innerHTML = "<i></i> Cached data"; setTimeout(connectWs, 3000); };
 }
 
 async function fetchJson(path, opts = {}) {
@@ -170,8 +233,8 @@ function resolveSlug(slug) {
 
 function variantHoverTitle(model) {
   const variants = model?.variants ?? [];
-  if (!variants.length) return "";
-  return `+${variants.length} variantes: ${variants.map((v) => v.name).join(", ")}`;
+  const exact = model?.name ? `Exact benchmark configuration: ${model.name}` : "Exact benchmark configuration";
+  return variants.length ? `${exact} · ${variants.length} related variant${variants.length === 1 ? "" : "s"}: ${variants.map((v) => v.name).join(", ")}` : exact;
 }
 
 function renderStackSummary() {
@@ -188,7 +251,7 @@ function renderStackSummary() {
       const providers = normalizeProviders(e).join(", ");
       const model = state.rankings?.models?.find((m) => m.slug === resolveSlug(e.modelSlug));
       const intel = model ? fmtMetric(model.intelligence, 1) : "—";
-      const price = model ? `$${model.priceBlended.toFixed(2)}` : "—";
+      const price = model ? fmtPrice(model.priceBlended) : "—";
       return `<div class="stack-row">
         <div class="stack-row-role">${escapeHtml(ROLE_LABELS[e.role] || e.role)}</div>
         <div class="stack-row-body">
@@ -214,23 +277,16 @@ function renderRoleGapBanner() {
     return;
   }
   banner.classList.remove("hidden");
-  banner.innerHTML = gaps.map((g) => {
-    const setup =
-      g.role === "free"
-        ? `<p class="gap-setup">In Cursor: Settings → Models → Override OpenAI Base URL (e.g. <code>http://localhost:11434/v1</code> for Ollama) → Add Model → pick this name.</p>`
-        : "";
-    return `<div class="gap-card" data-role="${escapeHtml(g.role)}">
-      <div class="gap-card-main">
-        <div class="gap-label">Missing ${escapeHtml(ROLE_LABELS[g.role] || g.role)}</div>
-        <div class="gap-pick">Try <strong>${escapeHtml(g.modelName)}</strong></div>
-        ${setup}
-      </div>
-      <div class="gap-actions">
-        <button type="button" class="btn btn-accent" data-gap-add="${escapeHtml(g.role)}">Add to stack</button>
-        <button type="button" class="btn btn-ghost" data-gap-dismiss="${escapeHtml(g.role)}">Dismiss</button>
-      </div>
-    </div>`;
-  }).join("");
+  const labels = gaps.map((g) => ROLE_LABELS[g.role] || g.role).join(", ");
+  banner.innerHTML = `<div class="gap-card gap-summary">
+    <div class="gap-card-main">
+      <div class="gap-label">My Stack needs attention</div>
+      <div class="gap-pick">${gaps.length} role${gaps.length === 1 ? "" : "s"} to review: <strong>${escapeHtml(labels)}</strong></div>
+      <p class="gap-setup">Open My Stack to review the local model suggestions and choose what to add.</p>
+    </div>
+    <div class="gap-actions"><button type="button" class="btn btn-accent" id="open-stack-gaps">Open My Stack</button></div>
+  </div>`;
+  banner.querySelector("#open-stack-gaps")?.addEventListener("click", openDrawer);
 
   banner.querySelectorAll("[data-gap-add]").forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -256,19 +312,25 @@ function renderBriefing() {
   const el = document.getElementById("briefing");
   const b = state.briefing;
   if (!b) {
-    el.innerHTML = `<p class="muted">Loading analyst briefing… Configure GEMINI_API_KEY in .env for AI-powered summaries (Groq/Ollama optional).</p>`;
+    el.innerHTML = `<p class="muted">Loading your local analyst briefing…</p>`;
     renderRoleGapBanner();
     return;
   }
 
   const sourceLabel =
-    b.analystSource === "gemini"
-      ? "Gemini"
-      : b.analystSource === "groq"
-        ? "Groq AI"
-        : b.analystSource === "ollama"
-          ? "Ollama"
-          : "Rule-based";
+    b.analystSource === "deepseek"
+      ? "DeepSeek V4"
+      : b.analystSource === "gemini"
+        ? "Gemini"
+        : b.analystSource === "groq"
+          ? "Groq AI"
+          : b.analystSource === "cerebras"
+            ? "Cerebras"
+            : b.analystSource === "openrouter"
+              ? "OpenRouter"
+              : b.analystSource === "ollama"
+                ? "Ollama"
+                : "Rule-based";
   const gaps = state.stack?.roleGaps ?? [];
   // Live role-gap banner owns missing-role suggestions; hide stale briefing upgrade if it's a gap.
   const showUpgrade =
@@ -326,7 +388,7 @@ function renderBriefing() {
 
 function section(title, items) {
   if (!items?.length) return "";
-  return `<details open><summary>${title}</summary><ul>${items.map((i) => `<li>${escapeHtml(i)}</li>`).join("")}</ul></details>`;
+  return `<details><summary>${title}</summary><ul>${items.map((i) => `<li>${escapeHtml(i)}</li>`).join("")}</ul></details>`;
 }
 
 function escapeHtml(s) {
@@ -346,8 +408,31 @@ function stripHtml(text) {
 }
 
 function fmtMetric(value, decimals = 0) {
-  if (value == null || value === 0) return "—";
+  if (value == null || !Number.isFinite(Number(value)) || Number(value) <= 0) return "—";
   return decimals ? Number(value).toFixed(decimals) : Math.round(value);
+}
+
+function fmtPrice(value) {
+  if (value == null || !Number.isFinite(Number(value)) || Number(value) < 0) return "—";
+  const amount = Number(value);
+  if (amount > 0 && amount < 0.000001) return "<$0.000001";
+  if (amount === 0) return "$0.00";
+  let text = amount.toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
+  if (!text.includes(".")) text += ".00";
+  else while (text.split(".")[1].length < 2) text += "0";
+  return `$${text}`;
+}
+
+function safeLink(value) {
+  try { const u = new URL(String(value || "")); return /^https?:$/.test(u.protocol) ? u.href : ""; } catch { return ""; }
+}
+
+function priceCell(model) {
+  const input = fmtPrice(model.priceInput);
+  const output = fmtPrice(model.priceOutput);
+  const blended = fmtPrice(model.priceBlended);
+  if (input === "—" && output === "—" && blended === "—") return `<span title="Pricing not published">—</span>`;
+  return `<span title="Blended price uses the Artificial Analysis 3:1 input/output mix. Source: ${escapeHtml(model.fetchedAt || "leaderboard")}">${input} / ${output}<small class="price-blended"> · ${blended} blend</small></span>`;
 }
 
 function renderNews() {
@@ -359,11 +444,12 @@ function renderNews() {
   const items = state.news ?? [];
 
   if (!items.length) {
+    document.getElementById("news-pager").innerHTML = "";
     feed.innerHTML = `<p class="muted">No news for this filter. Try Refresh news or a wider time range.</p>`;
     return;
   }
-
-  feed.innerHTML = items.slice(0, 40).map((n) => `
+  const visible = state.view === "overview" ? items.slice(0, 3) : pageItems(items, "news");
+  feed.innerHTML = visible.map((n) => `
     <article class="news-card">
       <div class="news-meta">
         <span class="source-tier tier-${n.tier ?? 3}">${escapeHtml(n.source)}</span>
@@ -374,6 +460,10 @@ function renderNews() {
       ${n.summary ? `<p class="muted news-summary">${escapeHtml(stripHtml(n.summary).slice(0, 120))}…</p>` : ""}
     </article>
   `).join("");
+  const pager = document.getElementById("news-pager");
+  if (state.view === "overview") pager.innerHTML = `<button type="button" class="btn btn-ghost btn-sm" data-open-view="news">View all news →</button>`;
+  else renderPager("news-pager", "news", items.length);
+  pager.querySelector("[data-open-view]")?.addEventListener("click", () => setView("news"));
 }
 
 function renderAiPicks() {
@@ -381,10 +471,12 @@ function renderAiPicks() {
   if (!feed) return;
   const items = state.aiPicks ?? [];
   if (!items.length) {
+    document.getElementById("aipick-pager").innerHTML = "";
     feed.innerHTML = `<p class="muted">No groundbreaking picks for this period yet.</p>`;
     return;
   }
-  feed.innerHTML = items.map((n) => `
+  const visible = state.view === "overview" ? items.slice(0, 3) : pageItems(items, "aipicks");
+  feed.innerHTML = visible.map((n) => `
     <article class="news-card aipick-card">
       <div class="news-meta">
         <span class="aipick-badge">AI Pick</span>
@@ -395,6 +487,10 @@ function renderAiPicks() {
       ${n.aiPickReason ? `<p class="aipick-reason">${escapeHtml(n.aiPickReason)}</p>` : ""}
     </article>
   `).join("");
+  const pager = document.getElementById("aipick-pager");
+  if (state.view === "overview") pager.innerHTML = `<button type="button" class="btn btn-ghost btn-sm" data-open-view="news">View all picks →</button>`;
+  else renderPager("aipick-pager", "aipicks", items.length);
+  pager.querySelector("[data-open-view]")?.addEventListener("click", () => setView("news"));
 }
 
 function renderCreators() {
@@ -406,10 +502,11 @@ function renderCreators() {
   }
   const items = state.videos ?? [];
   if (!items.length) {
+    document.getElementById("creators-pager").innerHTML = "";
     feed.innerHTML = `<p class="muted">No creator uploads yet. YouTube channels poll every 30 minutes.</p>`;
     return;
   }
-  feed.innerHTML = items.slice(0, 30).map((v) => `
+  feed.innerHTML = pageItems(items, "creators").map((v) => `
     <a class="creator-card" href="${escapeHtml(v.link)}" target="_blank" rel="noopener">
       <img class="creator-thumb" src="${escapeHtml(v.thumbnail)}" alt="" loading="lazy" width="120" height="68" />
       <div class="creator-body">
@@ -419,6 +516,7 @@ function renderCreators() {
       </div>
     </a>
   `).join("");
+  renderPager("creators-pager", "creators", items.length);
 }
 
 function renderCompanyVideos() {
@@ -430,10 +528,11 @@ function renderCompanyVideos() {
   }
   const items = state.companyVideos ?? [];
   if (!items.length) {
+    document.getElementById("companies-pager").innerHTML = "";
     feed.innerHTML = `<p class="muted">No company uploads yet. YouTube channels poll every 30 minutes.</p>`;
     return;
   }
-  feed.innerHTML = items.slice(0, 30).map((v) => `
+  feed.innerHTML = pageItems(items, "companies").map((v) => `
     <a class="creator-card" href="${escapeHtml(v.link)}" target="_blank" rel="noopener">
       <img class="creator-thumb" src="${escapeHtml(v.thumbnail)}" alt="" loading="lazy" width="120" height="68" />
       <div class="creator-body">
@@ -443,6 +542,7 @@ function renderCompanyVideos() {
       </div>
     </a>
   `).join("");
+  renderPager("companies-pager", "companies", items.length);
 }
 
 async function loadNews(period = state.newsPeriod, category = state.newsCategory) {
@@ -488,15 +588,35 @@ function winnerBadges(slug, winners) {
   if (winners.math === slug) badges.push('<span class="badge">Math</span>');
   if (winners.price === slug) badges.push('<span class="badge">Price</span>');
   if (winners.speed === slug) badges.push('<span class="badge">Speed</span>');
-  if (winners.accessibility === slug) badges.push('<span class="badge">Open</span>');
+  if (winners.accessibility === slug) badges.push('<span class="badge">Access</span>');
   return badges.join("");
+}
+
+function benchmarkRows(snapshot) {
+  if (state.benchmarkView === "best") return Array.isArray(snapshot.models) ? snapshot.models : [];
+  return Array.isArray(snapshot.testedModels) ? snapshot.testedModels : (Array.isArray(snapshot.models) ? snapshot.models : []);
 }
 
 function renderRankings() {
   const r = state.rankings;
   const tbody = document.querySelector("#rankings-table tbody");
   const updated = document.getElementById("rankings-updated");
-  if (!r?.models?.length) {
+  const publicView = document.getElementById("public-benchmark-view");
+  const table = document.getElementById("rankings-table");
+  if (state.benchmarkSource !== "aa") {
+    table.classList.add("hidden");
+    document.getElementById("aa-attribution")?.classList.add("hidden");
+    document.querySelectorAll(".benchmark-tools .segmented").forEach((el) => el.classList.add("hidden"));
+    renderPublicBenchmark();
+    return;
+  }
+  table.classList.remove("hidden");
+  document.getElementById("aa-attribution")?.classList.remove("hidden");
+  document.querySelectorAll(".benchmark-tools .segmented").forEach((el) => el.classList.remove("hidden"));
+  if (publicView) { publicView.classList.add("hidden"); publicView.innerHTML = ""; }
+  const rows = r ? benchmarkRows(r) : [];
+  if (!rows.length) {
+    document.getElementById("rankings-pager").innerHTML = "";
     tbody.innerHTML = `<tr><td colspan="10" class="muted">Loading benchmarks…</td></tr>`;
     return;
   }
@@ -506,28 +626,114 @@ function renderRankings() {
     : `Updated ${timeAgo(r.updatedAt)}`;
   updated.classList.toggle("stale-warning", Boolean(r.health?.stale));
   const mine = resolveSlug(state.stack?.primaryModelSlug);
-  const sorted = sortModels(r.models);
+  const query = state.benchmarkQuery.trim().toLowerCase();
+  const filtered = rows.filter((m) => {
+    const matchesQuery = !query || `${m.name} ${m.displayName || ""} ${m.creator}`.toLowerCase().includes(query);
+    const matchesAccess = state.benchmarkAccess !== "open" || /open weights|open source/i.test(String(m.accessibility || ""));
+    return matchesQuery && matchesAccess;
+  });
+  const sorted = sortModels(filtered);
 
-  tbody.innerHTML = sorted.slice(0, 30).map((m, i) => {
+  const pageStart = (state.pages.rankings - 1) * PAGE_SIZE.rankings;
+  tbody.innerHTML = sorted.slice(pageStart, pageStart + PAGE_SIZE.rankings).map((m, i) => {
     const cls = [
       i === 0 ? "row-gold" : "",
       m.slug === mine ? "row-mine" : "",
     ].filter(Boolean).join(" ");
-    const shownName = m.displayName ?? m.name;
+    const shownName = m.name ?? m.displayName;
     const hover = variantHoverTitle(m);
+    const winners = state.benchmarkView === "best" ? r.winners : (r.testedWinners ?? r.winners);
+    const badges = winnerBadges(m.slug, winners);
+    const bestBadge = state.benchmarkView === "best" && badges ? '<span class="badge">Best reported</span>' : "";
     return `<tr class="${cls}">
-      <td>${i + 1}</td>
-      <td class="${state.sortKey === "name" ? "col-sort-active" : ""}" ${hover ? `title="${escapeHtml(hover)}"` : ""}>${escapeHtml(shownName)}</td>
+      <td>${pageStart + i + 1}</td>
+      <td class="${state.sortKey === "name" ? "col-sort-active" : ""}" ${hover ? `title="${escapeHtml(hover)}"` : ""}>${safeLink(m.url) ? `<a href="${escapeHtml(safeLink(m.url))}" target="_blank" rel="noopener">${escapeHtml(shownName)}</a>` : escapeHtml(shownName)}</td>
       <td class="${state.sortKey === "creator" ? "col-sort-active" : ""}">${escapeHtml(m.creator)}</td>
       <td class="${state.sortKey === "intelligence" ? "col-sort-active" : ""}">${fmtMetric(m.intelligence, 1)}</td>
       <td class="${state.sortKey === "coding" ? "col-sort-active" : ""}">${fmtMetric(m.coding, 1)}</td>
       <td class="${state.sortKey === "math" ? "col-sort-active" : ""}">${fmtMetric(m.math, 1)}</td>
-      <td class="${state.sortKey === "priceBlended" ? "col-sort-active" : ""}">$${m.priceBlended.toFixed(2)}</td>
+      <td class="${state.sortKey === "priceBlended" ? "col-sort-active" : ""}">${priceCell(m)}</td>
       <td class="${state.sortKey === "speed" ? "col-sort-active" : ""}">${fmtMetric(m.speed)}</td>
-      <td class="${state.sortKey === "accessibilityScore" ? "col-sort-active" : ""}">${escapeHtml(m.accessibility)}</td>
-      <td>${winnerBadges(m.slug, r.winners)}</td>
+      <td class="${state.sortKey === "accessibilityScore" ? "col-sort-active" : ""}"><span>${escapeHtml(m.accessibility || "Unknown")}</span>${m.licenseUrl && safeLink(m.licenseUrl) ? ` · <a href="${escapeHtml(safeLink(m.licenseUrl))}" target="_blank" rel="noopener">license</a>` : ""}${m.weightsUrl && safeLink(m.weightsUrl) ? ` · <a href="${escapeHtml(safeLink(m.weightsUrl))}" target="_blank" rel="noopener">weights</a>` : ""}</td>
+      <td>${badges}${bestBadge}</td>
     </tr>`;
   }).join("");
+  renderPager("rankings-pager", "rankings", sorted.length);
+}
+
+function publicValue(value) {
+  if (value == null || !Number.isFinite(Number(value))) return "—";
+  const number = Number(value);
+  return Number.isInteger(number) ? String(number) : number.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function publicDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+
+function publicCalendarDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
+}
+
+function setPublicBoards(boards) {
+  state.publicBoards = Array.isArray(boards) ? boards : [];
+  const select = document.getElementById("benchmark-source");
+  if (!select) return;
+  const selected = state.benchmarkSource;
+  select.innerHTML = '<option value="aa">Artificial Analysis</option>' + state.publicBoards.map((board) => `<option value="${escapeHtml(board.id)}">${escapeHtml(board.name || board.id)}</option>`).join("");
+  select.value = [...select.options].some((option) => option.value === selected) ? selected : "aa";
+  state.benchmarkSource = select.value;
+}
+
+function renderPublicBenchmark() {
+  const view = document.getElementById("public-benchmark-view");
+  const pager = document.getElementById("rankings-pager");
+  if (!view) return;
+  const board = state.publicBoards.find((candidate) => candidate.id === state.benchmarkSource);
+  if (!board) {
+    const updated = document.getElementById("rankings-updated");
+    if (updated) { updated.textContent = ""; updated.classList.remove("stale-warning"); }
+    view.classList.remove("hidden");
+    view.innerHTML = '<p class="muted">Loading public benchmark sources…</p>';
+    pager.innerHTML = "";
+    return;
+  }
+  const columns = Array.isArray(board.columns) ? board.columns : [];
+  const query = state.benchmarkQuery.trim().toLowerCase();
+  const rows = (Array.isArray(board.rows) ? board.rows : []).filter((row) => !query || [row.name, row.detail, row.status, row.warning].filter(Boolean).join(" ").toLowerCase().includes(query));
+  const publicPageSize = 5;
+  state.pages.rankings = Math.min(state.pages.rankings, Math.max(1, Math.ceil(rows.length / publicPageSize)));
+  const pageStart = (state.pages.rankings - 1) * publicPageSize;
+  const visible = rows.slice(pageStart, pageStart + publicPageSize);
+  const sourceCalendarDate = publicCalendarDate(board.sourceUpdatedAt);
+  const sourceDate = sourceCalendarDate ? `${board.sourceUpdatedLabel || "Source updated"} · ${sourceCalendarDate}` : (board.sourceVersion ? "" : "Source update date unavailable");
+  const fetchedDate = board.fetchedAt && publicDate(board.fetchedAt) ? `Fetched ${publicDate(board.fetchedAt)}` : "Fetch date unavailable";
+  const sourceVersion = board.sourceVersion ? `Suite release ${board.sourceVersion}` : "";
+  const links = [
+    board.sourceUrl ? `<a href="${escapeHtml(safeLink(board.sourceUrl))}" target="_blank" rel="noopener">Source</a>` : "",
+    board.methodologyUrl ? `<a href="${escapeHtml(safeLink(board.methodologyUrl))}" target="_blank" rel="noopener">Methodology</a>` : "",
+  ].filter(Boolean).join(" · ");
+  const notice = board.error || board.stale ? `<p class="benchmark-source-error" role="status">${escapeHtml(board.error || "This source may be stale.")}${rows.length ? " Showing the last cached dataset." : ""}</p>` : "";
+  const updated = document.getElementById("rankings-updated");
+  if (updated) { updated.textContent = board.stale ? "⚠ Cached source data" : ""; updated.classList.toggle("stale-warning", board.stale === true); }
+  view.classList.remove("hidden");
+  view.innerHTML = `${notice}<div class="public-benchmark-head"><div><h3>${escapeHtml(board.name || state.benchmarkSource)}</h3><p class="muted">${escapeHtml(board.description || "Public benchmark results")}</p></div><div class="public-benchmark-meta">${sourceVersion ? `<span>${escapeHtml(sourceVersion)}</span>` : ""}<span>${escapeHtml(sourceDate)}</span><span>${escapeHtml(fetchedDate)}</span></div></div><div class="table-wrap"><table><thead><tr><th>#</th><th>${escapeHtml(board.entityLabel || "Model")}</th><th>${escapeHtml(board.metricLabel || "Score")}</th></tr></thead><tbody>${visible.length ? visible.map((row, index) => { const submitted = publicCalendarDate(row.testedAt); const detail = [row.detail, row.status, submitted ? `Submitted ${submitted}` : ""].filter(Boolean).join(" · "); const warning = row.warning ? `<small class="public-row-warning">${escapeHtml(row.warning)}</small>` : ""; const categories = columns.map((column) => `<div><span>${escapeHtml(column.label || column.key)}</span><strong>${publicValue(row.values?.[column.key])}</strong></div>`).join(""); const categoryDetails = columns.length ? `<details class="public-category-details"><summary>Category scores</summary><div class="public-category-grid">${categories}</div></details>` : ""; return `<tr><td>${pageStart + index + 1}</td><td>${row.url && safeLink(row.url) ? `<a href="${escapeHtml(safeLink(row.url))}" target="_blank" rel="noopener">${escapeHtml(row.name || row.id)}</a>` : escapeHtml(row.name || row.id)}${detail ? `<small class="public-row-detail">${escapeHtml(detail)}</small>` : ""}${warning}</td><td><strong>${publicValue(row.score)}</strong>${categoryDetails}</td></tr>`; }).join("") : `<tr><td colspan="3" class="muted">No rows match this filter.</td></tr>`}</tbody></table></div><p class="attribution">${links}${links ? " · " : ""}${escapeHtml(board.metricLabel || "Metric")} values are reported by this source and are not combined with other boards.</p>`;
+  renderPager("rankings-pager", "rankings", rows.length, publicPageSize);
+}
+
+async function loadPublicBenchmarks() {
+  try {
+    const payload = await fetchJson("/api/benchmarks");
+    setPublicBoards(payload?.boards);
+  } catch (error) {
+    state.publicBoards = [];
+    console.warn("Public benchmark sources unavailable", error);
+  }
+  renderRankings();
 }
 
 function renderStackChip() {
@@ -962,6 +1168,48 @@ document.getElementById("refresh-news")?.addEventListener("click", async () => {
   }
 });
 
+async function refreshResource(buttonId, endpoint, loaders) {
+  const btn = document.getElementById(buttonId);
+  if (!btn) return;
+  const previous = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Refreshing…";
+  try { await fetchJson(endpoint, { method: "POST", timeoutMs: 90_000 }); }
+  catch (err) { console.warn(`Refresh failed: ${endpoint}`, err); }
+  await Promise.allSettled(loaders.map((loader) => loader()));
+  btn.disabled = false;
+  btn.textContent = previous;
+}
+
+document.getElementById("refresh-rankings")?.addEventListener("click", async () => {
+  const button = document.getElementById("refresh-rankings");
+  const previous = button.textContent;
+  button.disabled = true;
+  button.textContent = "Refreshing…";
+  try {
+    if (state.benchmarkSource === "aa") {
+      await fetchJson("/api/rankings/refresh", { method: "POST", timeoutMs: 90_000 });
+      state.rankings = await fetchJson("/api/rankings");
+    } else {
+      const result = await fetchJson("/api/benchmarks/refresh", { method: "POST", timeoutMs: 90_000 });
+      if (Array.isArray(result?.boards)) setPublicBoards(result.boards);
+    }
+    renderRankings();
+  } catch (error) {
+    const updated = document.getElementById("rankings-updated");
+    if (updated) { updated.textContent = "⚠ Refresh failed — showing cached data"; updated.classList.add("stale-warning"); }
+  } finally {
+    button.disabled = false;
+    button.textContent = previous;
+  }
+});
+document.getElementById("benchmark-source")?.addEventListener("change", (event) => { state.benchmarkSource = event.target.value; state.pages.rankings = 1; renderRankings(); });
+document.getElementById("refresh-videos")?.addEventListener("click", () => refreshResource("refresh-videos", "/api/videos/refresh", [loadVideos, loadCompanyVideos]));
+document.getElementById("benchmark-search")?.addEventListener("input", (event) => { state.benchmarkQuery = event.target.value; state.pages.rankings = 1; renderRankings(); });
+document.querySelectorAll("[data-benchmark-view]").forEach((button) => button.addEventListener("click", () => { document.querySelectorAll("[data-benchmark-view]").forEach((b) => b.classList.remove("active")); button.classList.add("active"); state.benchmarkView = button.dataset.benchmarkView; state.pages.rankings = 1; renderRankings(); }));
+document.querySelectorAll("[data-access-filter]").forEach((button) => button.addEventListener("click", () => { document.querySelectorAll("[data-access-filter]").forEach((b) => b.classList.remove("active")); button.classList.add("active"); state.benchmarkAccess = button.dataset.accessFilter; state.pages.rankings = 1; renderRankings(); }));
+document.querySelectorAll("[data-video-kind]").forEach((button) => button.addEventListener("click", () => { document.querySelectorAll("[data-video-kind]").forEach((b) => b.classList.remove("active")); button.classList.add("active"); state.videoKind = button.dataset.videoKind; document.querySelector(".creators-panel")?.classList.toggle("hidden", state.videoKind !== "creator"); document.querySelector(".companies-panel")?.classList.toggle("hidden", state.videoKind !== "company"); document.querySelector(".companies-panel")?.classList.toggle("show-company", state.videoKind === "company"); }));
+
 document.getElementById("stack-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const entries = collectEntriesFromDom().filter((row) => row.modelSlug);
@@ -1021,9 +1269,8 @@ function escapeChatHtml(str) {
 }
 
 function searchStatusLabel() {
-  if (chatState.searchBackend === "tavily") return "Web search: on (Tavily)";
-  if (chatState.searchBackend === "gemini") return "Web search: on (Gemini)";
-  return "Web search: off — add TAVILY_API_KEY or GEMINI_API_KEY";
+  if (chatState.searchBackend && chatState.searchBackend !== "none") return `Search: on (${chatState.searchBackend})`;
+  return "Local model · search unavailable";
 }
 
 function renderChatSearchStatus() {
@@ -1038,7 +1285,7 @@ function populateChatModels() {
   if (!chatState.models.length) {
     const opt = document.createElement("option");
     opt.value = "";
-    opt.textContent = "No models — set API keys in .env";
+    opt.textContent = "No local model configured — open Settings";
     select.appendChild(opt);
     select.disabled = true;
     return;
@@ -1142,7 +1389,7 @@ async function sendChatMessage(text) {
   if (!modelId) {
     chatState.messages.push({
       role: "error",
-      content: "Configure GROQ_API_KEY and/or GEMINI_API_KEY in .env, then restart the server.",
+      content: "Configure a local model in AI Pulse Settings, then try again.",
     });
     renderChatMessages();
     return;
@@ -1215,6 +1462,101 @@ document.getElementById("chat-input")?.addEventListener("keydown", (e) => {
   }
 });
 
+/* —— X / social radar —— */
+function safeExternalUrl(value) {
+  try {
+    const url = new URL(String(value || ""), location.origin);
+    return /^https?:$/.test(url.protocol) ? url.href : "#";
+  } catch { return "#"; }
+}
+
+function renderSocial() {
+  const profilesEl = document.getElementById("social-profiles");
+  const feed = document.getElementById("social-feed");
+  if (!profilesEl || !feed) return;
+  const profiles = state.social.profiles || [];
+  profilesEl.innerHTML = profiles.length
+    ? profiles.map((p) => `<span class="profile-pill-wrap"><a class="profile-pill" href="${escapeHtml(safeExternalUrl(p.profileUrl || `https://x.com/${p.handle}`))}" target="_blank" rel="noopener">𝕏 ${escapeHtml(p.name || p.handle)}</a>${p.source === "user" ? `<button type="button" class="profile-remove" data-remove-profile="${escapeHtml(p.handle)}" aria-label="Unfollow @${escapeHtml(p.handle)}">×</button>` : ""}</span>`).join("")
+    : `<span class="muted">No profiles added yet</span>`;
+  profilesEl.querySelectorAll("[data-remove-profile]").forEach((btn) => btn.addEventListener("click", () => removeSocialProfile(btn.dataset.removeProfile)));
+  const status = document.getElementById("social-status");
+  if (status) {
+    status.textContent = state.social.configured === false
+      ? "X access is not configured. Add an X API token in AI Pulse Settings to load posts."
+      : state.social.error || (state.social.updatedAt ? `Updated ${timeAgo(state.social.updatedAt)}` : "");
+  }
+  const posts = state.social.posts || [];
+  if (!posts.length) {
+    feed.innerHTML = `<div class="empty-state"><span class="empty-mark">𝕏</span><strong>${state.social.error ? "X feed unavailable" : "Your social radar is ready"}</strong><p class="muted">${state.social.configured === false ? "Connect X in AI Pulse Settings, then refresh this view." : "Follow a profile to bring public AI posts into your radar."}</p><button type="button" class="btn btn-ghost" id="empty-add-social">Add a profile</button></div>`;
+    document.getElementById("empty-add-social")?.addEventListener("click", showSocialForm);
+    return;
+  }
+  feed.innerHTML = pageItems(posts, "social").map((p) => {
+    const link = safeExternalUrl(p.url);
+    return `<article class="social-card"><div class="social-avatar">${escapeHtml((p.authorName || p.authorHandle || "X").slice(0, 1).toUpperCase())}</div><div class="social-body"><div class="social-meta"><strong>${escapeHtml(p.authorName || "Unknown")}</strong><span>@${escapeHtml(p.authorHandle || "")}</span><span>${p.createdAt ? timeAgo(p.createdAt) : ""}</span></div><p>${escapeHtml(stripHtml(p.text || ""))}</p><a href="${escapeHtml(link)}" target="_blank" rel="noopener">Open on X ↗</a></div></article>`;
+  }).join("");
+  renderPager("social-pager", "social", posts.length);
+}
+
+async function loadSocial() {
+  try {
+    const data = await fetchJson("/api/social?limit=40");
+    state.social.posts = data.items || [];
+    state.social.profiles = data.profiles || [];
+    state.social.configured = data.configured;
+    state.social.updatedAt = data.updatedAt || data.lastAttemptAt || null;
+    state.social.error = data.error || null;
+  } catch (err) {
+    state.social.posts = [];
+    state.social.error = "Could not load the X feed right now.";
+  }
+  renderSocial();
+}
+
+function showSocialForm() {
+  const form = document.getElementById("social-profile-form");
+  form?.classList.remove("hidden");
+  document.getElementById("social-handle")?.focus();
+}
+
+function hideSocialForm() {
+  document.getElementById("social-profile-form")?.classList.add("hidden");
+  document.getElementById("social-form-error").textContent = "";
+}
+
+async function addSocialProfile(handle) {
+  const normalized = handle.trim().replace(/^@+/, "");
+  if (!/^[A-Za-z0-9_]{1,15}$/.test(normalized)) throw new Error("Use a valid @handle with up to 15 characters.");
+  try {
+    await fetchJson("/api/social/profiles", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ handle: normalized }) });
+  } catch (err) { throw new Error("Could not add that profile."); }
+  await loadSocial();
+}
+
+async function removeSocialProfile(handle) {
+  try { await fetchJson(`/api/social/profiles/${encodeURIComponent(handle)}`, { method: "DELETE" }); await loadSocial(); }
+  catch { state.social.error = "Could not remove that profile."; renderSocial(); }
+}
+
+document.querySelectorAll(".nav-item").forEach((item) => item.addEventListener("click", () => setView(item.dataset.view)));
+document.getElementById("sidebar-stack")?.addEventListener("click", promptOpenApp);
+document.getElementById("sidebar-chat")?.addEventListener("click", () => setChatOpen(true));
+document.getElementById("add-social-profile")?.addEventListener("click", showSocialForm);
+document.getElementById("cancel-social-profile")?.addEventListener("click", hideSocialForm);
+document.getElementById("social-profile-form")?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const input = document.getElementById("social-handle");
+  const error = document.getElementById("social-form-error");
+  try { await addSocialProfile(input.value); input.value = ""; hideSocialForm(); }
+  catch (err) { error.textContent = err.message; }
+});
+document.getElementById("refresh-social")?.addEventListener("click", async () => {
+  const btn = document.getElementById("refresh-social"); btn.disabled = true; btn.textContent = "Refreshing…";
+  try { await fetchJson("/api/social/refresh", { method: "POST", timeoutMs: 90_000 }); } catch { /* cached state is still rendered */ }
+  await loadSocial(); btn.disabled = false; btn.textContent = "Refresh";
+});
+setView("overview");
+
 async function init() {
   connectWs();
 
@@ -1222,6 +1564,7 @@ async function init() {
     fetchJson("/api/rankings"),
     fetchJson(`/api/news?limit=50&period=${state.newsPeriod}&category=${state.newsCategory}`),
     fetchJson("/api/briefing"),
+    loadPublicBenchmarks(),
   ]);
 
   let anyOk = false;

@@ -16,7 +16,7 @@ export interface SearchAgentResult {
   error?: string;
 }
 
-export type SearchBackend = "tavily" | "gemini" | "none";
+export type SearchBackend = "tavily" | "none";
 
 export interface ChatCitation {
   title: string;
@@ -31,11 +31,8 @@ export interface ChatReply {
   searchBackend: SearchBackend;
 }
 
-export interface ChatEnv {
-  geminiKey?: string;
-  groqKey?: string;
-  tavilyKey?: string;
-}
+export type ChatProvider = "local";
+export interface ChatEnv { tavilyKey?: string; }
 
 export interface ToolCallRequest {
   id: string;

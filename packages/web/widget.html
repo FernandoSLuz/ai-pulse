@@ -35,7 +35,7 @@
             <th class="sortable" data-sort="intelligence">Int</th>
             <th class="sortable" data-sort="coding">Code</th>
             <th class="sortable" data-sort="math">Math</th>
-            <th class="sortable" data-sort="priceBlended">$/1M</th>
+        <th class="sortable" data-sort="priceBlended" title="USD per 1M tokens · input / output · blended = 3:1 input/output">$/1M</th>
             <th class="sortable" data-sort="speed">Spd</th>
             <th class="sortable" data-sort="accessibilityScore">Acc</th>
           </tr>
@@ -90,8 +90,11 @@
           const vb = String(b[col.key] ?? "").toLowerCase();
           return sortDir === "asc" ? va.localeCompare(vb) : vb.localeCompare(va);
         }
-        const va = Number(a[col.key]) || 0;
-        const vb = Number(b[col.key]) || 0;
+        const va = Number(a[col.key]);
+        const vb = Number(b[col.key]);
+        const am = !Number.isFinite(va);
+        const bm = !Number.isFinite(vb);
+        if (am || bm) { if (am && bm) return 0; return am ? 1 : -1; }
         return sortDir === "asc" ? va - vb : vb - va;
       });
     }
@@ -124,11 +127,22 @@
       window.aiPulse.getMaxHeight().then((h) => { maxHeight = h; fitWindow(); });
     }
 
-    function fmt(n) { return n > 0 ? Math.round(n * 10) / 10 : "—"; }
+    function fmt(n) { return n == null || !Number.isFinite(Number(n)) || Number(n) <= 0 ? "—" : Math.round(Number(n) * 10) / 10; }
+    function fmtPrice(n) {
+      if (n == null || !Number.isFinite(Number(n)) || Number(n) < 0) return "—";
+      const amount = Number(n);
+      if (amount > 0 && amount < 0.000001) return "<$0.000001";
+      if (amount === 0) return "$0.00";
+      let text = amount.toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
+      if (!text.includes(".")) text += ".00";
+      else while (text.split(".")[1].length < 2) text += "0";
+      return "$" + text;
+    }
     function escapeHtml(s) {
       return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
     function escapeAttr(s) { return escapeHtml(s).replace(/"/g, "&quot;"); }
+    function safeUrl(value) { try { const u = new URL(String(value || "")); return /^https?:$/.test(u.protocol) ? u.href : ""; } catch { return ""; } }
 
     function cleanHeadline(text) {
       return String(text).replace(/\((\d+\.\d{2,})\)/g, (_, n) => `(${Number(n).toFixed(1)})`);
@@ -136,9 +150,11 @@
 
     function shortAccess(a) {
       if (!a) return "—";
-      if (a.includes("Open")) return "Open";
+      if (/Open weights|Open source/i.test(a)) return "Open";
+      if (/Unknown/i.test(a)) return "?";
       if (a.includes("Gated")) return "Gated";
-      return "API";
+      if (a.includes("Proprietary")) return "Closed";
+      return "?";
     }
 
     function winnerMark(slug, winners) {
@@ -304,14 +320,15 @@
         const standing = intelRankIndex(m.slug);
         const rankNum = standing >= 0 ? standing + 1 : i + 1;
         const rank = win ? `${rankNum}<span class="widget-win">${win}</span>` : String(rankNum);
-        const rowClass = `${isMine ? "is-mine" : ""} ${standing === 0 ? "is-top" : ""} ${m.url ? "is-link" : ""}`.trim();
-        const dataHref = m.url ? ` data-href="${escapeAttr(m.url)}"` : "";
+        const modelUrl = safeUrl(m.url);
+        const rowClass = `${isMine ? "is-mine" : ""} ${standing === 0 ? "is-top" : ""} ${modelUrl ? "is-link" : ""}`.trim();
+        const dataHref = modelUrl ? ` data-href="${escapeAttr(modelUrl)}"` : "";
         const label = shortName(m.displayName ?? m.name);
         const roleTitles = (mineEntries ?? []).map((e) => ROLE_META[e.role]?.label || e.role).join(", ");
         const variantTitle = (m.variants?.length)
           ? `+${m.variants.length} variantes: ${m.variants.map((v) => v.name).join(", ")}`
           : "";
-        const hover = [m.displayName ?? m.name, m.creator, roleTitles ? `Your ${roleTitles}` : "", variantTitle, m.url ? "click to open" : ""]
+        const hover = [m.displayName ?? m.name, m.creator, roleTitles ? `Your ${roleTitles}` : "", variantTitle, modelUrl ? "click to open" : ""]
           .filter(Boolean)
           .join(" · ");
 
@@ -323,8 +340,8 @@
           <td class="c-num c-intel ${sortKey === "intelligence" ? "c-sort-active" : ""}">${fmt(m.intelligence)}</td>
           <td class="c-num ${sortKey === "coding" ? "c-sort-active" : ""}">${fmt(m.coding)}</td>
           <td class="c-num ${sortKey === "math" ? "c-sort-active" : ""}">${fmt(m.math)}</td>
-          <td class="c-num ${sortKey === "priceBlended" ? "c-sort-active" : ""}">${m.priceBlended > 0 ? m.priceBlended.toFixed(2) : "—"}</td>
-          <td class="c-num ${sortKey === "speed" ? "c-sort-active" : ""}">${m.speed > 0 ? Math.round(m.speed) : "—"}</td>
+          <td class="c-num ${sortKey === "priceBlended" ? "c-sort-active" : ""}" title="USD/1M input ${m.priceInput == null ? "—" : m.priceInput} · output ${m.priceOutput == null ? "—" : m.priceOutput} · blended 3:1 ${m.priceBlended == null ? "—" : m.priceBlended}">${fmtPrice(m.priceBlended)}</td>
+          <td class="c-num ${sortKey === "speed" ? "c-sort-active" : ""}">${fmt(m.speed)}</td>
           <td class="c-acc ${sortKey === "accessibilityScore" ? "c-sort-active" : ""}">${shortAccess(m.accessibility)}</td>
         </tr>`;
       }).join("");

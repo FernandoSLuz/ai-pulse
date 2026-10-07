@@ -44,6 +44,9 @@ jobs:
           node --check packages/web/app.js
           node --check packages/widget/renderer/settings.js
 
+      - name: Data integrity regressions
+        run: npm run smoke
+
       - name: Sanity-check the bundled server boots
         run: |
           mkdir -p /tmp/aipulse
@@ -64,3 +67,49 @@ jobs:
       # Catches a broken linux: block in electron-builder.yml without cutting a release.
       - name: Package the Linux app dir (no installer)
         run: cd packages/widget && npx electron-builder --linux --dir --publish never
+
+  platform-smoke:
+    name: Platform packaging smoke (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+            command: npx electron-builder --win nsis --x64 --publish never
+          - os: macos-15-intel
+            platform: mac
+            command: npx electron-builder --mac dmg --x64 --publish never
+          - os: macos-15
+            platform: mac-arm64
+            command: npx electron-builder --mac dmg --arm64 --publish never
+          - os: ubuntu-latest
+            platform: linux-x64
+            command: npx electron-builder --linux AppImage deb rpm --x64 --publish never
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx install-electron
+      - name: Install Linux packaging tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libarchive-tools rpm
+      - name: Build desktop app
+        run: npm run build -w @ai-pulse/widget
+      - name: Smoke-test better-sqlite3 under Electron
+        shell: bash
+        run: |
+          ELECTRON_BIN="node_modules/electron/dist/electron"
+          if [ "$RUNNER_OS" = "macOS" ]; then ELECTRON_BIN="node_modules/electron/dist/Electron.app/Contents/MacOS/Electron"; fi
+          if [ "$RUNNER_OS" = "Windows" ]; then ELECTRON_BIN="node_modules/electron/dist/electron.exe"; fi
+          ELECTRON_RUN_AS_NODE=1 "$ELECTRON_BIN" -e "if (+process.versions.napi < 10) process.exit(1); new (require('better-sqlite3'))(':memory:').close(); console.log('better-sqlite3 OK', process.versions.electron, process.versions.napi);"
+      - name: Local model setup and inference
+        timeout-minutes: 15
+        run: node --import tsx packages/server/scripts/local-ai-smoke.ts
+      - name: Package without publishing
+        shell: bash
+        run: cd packages/widget && ${{ matrix.command }}

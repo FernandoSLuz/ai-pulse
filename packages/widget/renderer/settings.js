@@ -1,14 +1,11 @@
 "use strict";
 const api = window.aiPulse;
 
-// curator: true => powers AI curation (the rotation). You need at least one.
+// Optional content/search integrations. Model inference never uses these keys.
 const KEY_META = {
-  GEMINI_API_KEY: { label: "Gemini", role: "AI curator · 3.5 & 2.5 Flash", hint: "Best free quality", url: "https://aistudio.google.com/apikey", curator: true },
-  CEREBRAS_API_KEY: { label: "Cerebras", role: "AI curator · Llama 3.3 70B", hint: "Fast, generous free tier", url: "https://cloud.cerebras.ai", curator: true },
-  GROQ_API_KEY: { label: "Groq", role: "AI curator · Llama 3.1 8B", hint: "Fast; small daily budget", url: "https://console.groq.com/keys", curator: true },
-  OPENROUTER_API_KEY: { label: "OpenRouter", role: "AI curator · free pool", hint: "Llama 3.3 70B / DeepSeek V3 (free)", url: "https://openrouter.ai/keys", curator: true },
-  AA_API_KEY: { label: "Artificial Analysis", role: "Benchmarks", hint: "Live model rankings", url: "https://artificialanalysis.ai/insights", curator: false },
-  TAVILY_API_KEY: { label: "Tavily", role: "Chat web search", hint: "1,000 free credits/month", url: "https://app.tavily.com", curator: false },
+  AA_API_KEY: { label: "Artificial Analysis", role: "Benchmark enrichment", hint: "Public rankings already work without a key", url: "https://artificialanalysis.ai/insights" },
+  TAVILY_API_KEY: { label: "Tavily", role: "Optional web search", hint: "Search queries go to Tavily when requested", url: "https://app.tavily.com" },
+  X_API_BEARER_TOKEN: { label: "X / Twitter", role: "Posts from followed profiles", hint: "Requires an X developer project with API access", url: "https://console.x.com" },
 };
 
 let state = null;
@@ -55,6 +52,7 @@ function renderKeyRow(name) {
 
   const input = document.createElement("input");
   input.type = "password";
+  input.setAttribute("aria-label", meta.label + " API credential");
   input.placeholder = configured ? "•••••••• saved — paste to replace" : "Paste API key";
 
   const btnWrap = document.createElement("div");
@@ -92,23 +90,7 @@ function renderKeyRow(name) {
 function renderKeys() {
   const container = el("keys");
   container.innerHTML = "";
-  const curators = state.keyNames.filter((n) => KEY_META[n]?.curator);
-  const others = state.keyNames.filter((n) => !KEY_META[n]?.curator);
-  const anyCurator = curators.some((n) => state.config.keys[n]);
-
-  const group = (heading, names) => {
-    const h = document.createElement("div");
-    h.className = "keys-group-head";
-    h.textContent = heading;
-    container.appendChild(h);
-    for (const n of names) container.appendChild(renderKeyRow(n));
-  };
-
-  group(
-    anyCurator ? "AI curators" : "AI curators — add at least one",
-    curators,
-  );
-  group("Data & search (optional)", others);
+  for (const name of state.keyNames) container.appendChild(renderKeyRow(name));
 }
 
 // --- Leaderboard ------------------------------------------------------------
@@ -227,65 +209,100 @@ function renderUpdate() {
 
 // --- AI provider health -----------------------------------------------------
 
+let localAI = null;
+let localActionPending = false;
+let refreshingHealth = false;
+
+function showPane(name) {
+  document.querySelectorAll("[data-settings-pane]").forEach((pane) => { pane.hidden = pane.dataset.settingsPane !== name; });
+  document.querySelectorAll("[data-pane]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.pane === name);
+    if (button.dataset.pane === name) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
+  });
+  document.querySelector(".content").scrollTop = 0;
+}
+
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "—";
+  return bytes >= 1024 ** 3 ? (bytes / 1024 ** 3).toFixed(1) + " GB" : Math.round(bytes / 1024 ** 2) + " MB";
+}
+
+function renderLocalAI(status) {
+  if (!status || status.error && !status.state) return;
+  localAI = status;
+  const busy = ["downloading", "starting", "verifying", "stopping"].includes(status.state);
+  const ready = status.state === "ready";
+  const profile = el("local-profile");
+  if (Array.isArray(status.profiles)) {
+    const signature = JSON.stringify(status.profiles);
+    if (profile.dataset.signature !== signature) {
+      const selected = profile.value;
+      profile.replaceChildren(new Option("Recommended for this computer", "auto"));
+      for (const p of status.profiles) profile.add(new Option(`${p.name} · ${formatBytes(p.bytes)}`, p.id));
+      if ([...profile.options].some((p) => p.value === selected)) profile.value = selected;
+      profile.dataset.signature = signature;
+    }
+  }
+  profile.disabled = busy || localActionPending;
+  const hw = status.hardware || {};
+  el("local-hardware").textContent = hw.memoryGB ? `${hw.memoryGB} GB RAM · ${hw.cpus || ""} CPU cores · ${status.recommendedProfile === "balanced" ? "Balanced model recommended" : "Light model recommended"}` : "Runs on your CPU. A dedicated graphics card is not required.";
+  const labels = { unconfigured: "Ready to set up", downloading: "Downloading local AI…", verifying: "Verifying the download…", starting: "Starting your model…", ready: "Your local AI is ready", degraded: "Basic curation is active", error: "Setup needs attention", stopping: "Stopping local AI…" };
+  el("local-status-title").textContent = labels[status.state] || status.state;
+  el("local-status-detail").textContent = status.error?.message || status.error || (ready ? `${status.model?.name || "Your model"} processes summaries and chat on this computer.` : busy ? "You can keep using the radar. The download is verified before it runs." : "Set up once, then use AI without an account or a cloud model.");
+  const progress = status.progress || {};
+  const percent = Math.min(100, Math.max(0, Number(progress.percent) || 0));
+  el("local-progress").hidden = !busy;
+  if (progress.totalBytes) el("local-progress").value = percent;
+  else el("local-progress").removeAttribute("value");
+  el("local-progress-label").textContent = progress.totalBytes && busy ? `${formatBytes(progress.downloadedBytes)} of ${formatBytes(progress.totalBytes)} · ${Math.round(percent)}%` : "";
+  el("local-install").disabled = busy || localActionPending || hw.supported === false;
+  el("local-install").textContent = ready ? "Change / repair model" : status.state === "error" ? "Retry setup" : "Set up local AI";
+  el("local-cancel").classList.toggle("hidden", !busy);
+  el("local-continue").textContent = ready ? "Open your radar →" : "Explore without AI";
+  const pill = el("ai-pill");
+  pill.textContent = ready ? "AI: local & ready" : busy ? "AI: setting up" : "AI: basic curation";
+  pill.className = "pill " + (ready ? "pill-ok" : "pill-warn");
+}
+
 async function refreshProviders() {
-  let health;
+  if (refreshingHealth) return;
+  refreshingHealth = true;
   try {
-    health = await api.serverHealth();
+    const [health, local] = await Promise.all([api.serverHealth(), api.apiGet("/api/local-ai")]);
+    if (health?.ok && !stackProfile) await loadPreferences();
+    renderLocalAI(local);
+    const box = el("providers");
+    box.replaceChildren();
+    const summary = document.createElement("p");
+    summary.className = "muted";
+    const outcome = health?.analyst?.lastOutcome;
+    summary.textContent = !health?.ok ? "Waiting for the background service…" : outcome?.source === "local" ? "The last briefing was processed by the local model." : "Rankings and basic curation are available. The local model adds summaries and chat.";
+    box.append(summary);
   } catch {
-    return;
-  }
-  const box = el("providers");
-  const aiPill = el("ai-pill");
+    el("local-status-title").textContent = "Waiting for the background service…";
+  } finally { refreshingHealth = false; }
+}
 
-  if (!health || !health.ok || !health.analyst) {
-    box.innerHTML = '<div class="muted small">Waiting for the service…</div>';
-    aiPill.textContent = "AI: …";
-    aiPill.className = "pill pill-muted";
-    return;
-  }
-
-  // Server is up — load preferences if the initial attempt raced the boot.
-  if (!stackProfile) loadPreferences();
-
-  const a = health.analyst;
-  const outcome = a.lastOutcome;
-  if (a.configuredCount === 0) {
-    aiPill.textContent = "AI: no key";
-    aiPill.className = "pill pill-err";
-  } else if (outcome && outcome.degraded) {
-    aiPill.textContent = "AI: degraded (rules)";
-    aiPill.className = "pill pill-warn";
-  } else if (outcome && outcome.source && outcome.source !== "rules") {
-    aiPill.textContent = "AI: " + outcome.source + " ✓";
-    aiPill.className = "pill pill-ok";
-  } else {
-    aiPill.textContent = "AI: " + a.availableCount + "/" + a.configuredCount + " ready";
-    aiPill.className = a.availableCount > 0 ? "pill pill-ok" : "pill pill-warn";
-  }
-
-  box.innerHTML = "";
-  for (const c of a.candidates.filter((x) => x.configured)) {
-    const row = document.createElement("div");
-    row.className = "prov";
-    const dot = document.createElement("span");
-    dot.className = "dot " + (c.available ? "on" : c.cooldownMs > 0 ? "cool" : "off");
-    const label = document.createElement("span");
-    label.className = "label";
-    label.textContent = c.label;
-    const st = document.createElement("span");
-    st.className = "state";
-    st.textContent = c.available
-      ? "ready"
-      : c.cooldownMs > 0
-        ? "cooldown " + Math.ceil(c.cooldownMs / 60000) + "m (" + c.reason + ")"
-        : c.reason;
-    row.appendChild(dot);
-    row.appendChild(label);
-    row.appendChild(st);
-    box.appendChild(row);
-  }
-  if (box.childElementCount === 0) {
-    box.innerHTML = '<div class="muted small">No AI provider configured — add a key above.</div>';
+async function setupLocalAI() {
+  localActionPending = true;
+  el("local-install").disabled = true;
+  try {
+    const result = await api.apiPost("/api/local-ai/setup", { profile: el("local-profile").value });
+    if (result.error && !result.state) throw new Error(result.error);
+    renderLocalAI(result);
+  } catch (error) {
+    // Keep the failure visible until the next health poll. Rendering the old
+    // status in finally used to hide setup errors immediately after they were
+    // shown, leaving the user with no actionable feedback.
+    localAI = { ...(localAI || {}), state: "error", error: error.message || "Setup failed" };
+    el("local-status-title").textContent = "Could not start setup";
+    el("local-status-detail").textContent = error.message || "Setup failed";
+    renderLocalAI(localAI);
+  } finally {
+    localActionPending = false;
+    if (localAI) renderLocalAI(localAI);
+    else el("local-install").disabled = false;
   }
 }
 
@@ -413,6 +430,16 @@ function applyState() {
 let rowsTimer = null;
 
 function wireControls() {
+  document.querySelectorAll("[data-pane]").forEach((button) => button.addEventListener("click", () => showPane(button.dataset.pane)));
+  el("local-install").addEventListener("click", setupLocalAI);
+  el("local-cancel").addEventListener("click", async () => {
+    const result = await api.apiPost("/api/local-ai/cancel", {});
+    renderLocalAI(result);
+  });
+  el("local-continue").addEventListener("click", async () => {
+    state = await api.setPrefs({ setupComplete: true });
+    await api.openDashboard();
+  });
   el("lb-show").addEventListener("change", async (e) => {
     state = await api.toggleLeaderboard(e.target.checked);
     applyState();
@@ -502,7 +529,7 @@ async function init() {
   });
   loadPreferences();
   refreshProviders();
-  setInterval(refreshProviders, 5000);
+  setInterval(refreshProviders, 1500);
 }
 
-init();
+init().catch((error) => { el("local-status-title").textContent = "Could not load settings"; el("local-status-detail").textContent = error.message; });

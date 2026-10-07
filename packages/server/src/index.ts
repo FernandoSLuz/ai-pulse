@@ -16,6 +16,8 @@ import {
   getNotificationPrefs,
   saveNotificationPrefs,
   upsertModels,
+  deleteModelsBySlugs,
+  listModelSlugs,
   upsertNews,
   clearNewsWithHtml,
   clearLatestBriefingUpgrade,
@@ -24,12 +26,12 @@ import {
   setMeta,
   getMeta,
 } from "./db.js";
-import { fetchArtificialAnalysisModels } from "./fetchers/artificial-analysis.js";
+import { fetchArtificialAnalysisModels, LEGACY_DEMO_SLUGS } from "./fetchers/artificial-analysis.js";
 import { fetchAaPublicSiteModels } from "./fetchers/aa-public-site.js";
 import { mergeBenchmarkModels } from "./fetchers/merge-models.js";
 import { enrichAccessibility } from "./fetchers/huggingface-access.js";
 import { fetchAllNews } from "./fetchers/rss-aggregator.js";
-import { fetchCreatorVideos, fetchCompanyVideos } from "./fetchers/youtube-channels.js";
+import { fetchCreatorVideos, fetchCompanyVideos, getVideoFetchHealth } from "./fetchers/youtube-channels.js";
 import { buildRankingsSnapshot, detectLeaderChanges } from "./rankings.js";
 import { evaluatePollHealth, recordSuccessfulPoll } from "./poll-health.js";
 import {
@@ -56,6 +58,10 @@ import type { ChatMessage } from "./chat/types.js";
 import { initTheme, getTheme, reloadTheme, onThemeChange, stopTheme } from "./theme.js";
 import type { ChangeEvent, NewsItem, NewsPeriod, StackRole, WsMessage } from "./types.js";
 import { isNewsPeriod } from "./types.js";
+import { getLocalAIStatus, initializeLocalAI, setupLocalAI, cancelLocalAISetup, stopLocalAI, LOCAL_AI_MODELS, runtimeSpec } from "./local-ai/index.js";
+import { registerSocialRoutes, initializeSocialPolling, stopSocialPolling } from "./social/routes.js";
+import { getPublicBenchmarks, refreshPublicBenchmarks, startPublicBenchmarkPolling, stopPublicBenchmarkPolling } from "./benchmarks/public-sources.js";
+
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -96,27 +102,17 @@ const PORT = Number(process.env.PORT) || 3847;
 // else stands between it and the LAN. Set AI_PULSE_BIND_HOST=0.0.0.0 to expose it.
 const BIND_HOST = process.env.AI_PULSE_BIND_HOST || "127.0.0.1";
 const AA_KEY = process.env.AA_API_KEY;
-const GROQ_KEY = process.env.GROQ_API_KEY;
-const GEMINI_KEY = process.env.GEMINI_API_KEY;
 const TAVILY_KEY = process.env.TAVILY_API_KEY;
-const CEREBRAS_KEY = process.env.CEREBRAS_API_KEY;
-const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
 const AA_POLL = Number(process.env.AA_POLL_INTERVAL_MS) || 7_200_000;
 const RSS_POLL = Number(process.env.RSS_POLL_INTERVAL_MS) || 1_200_000;
 const YT_POLL = Number(process.env.YT_POLL_INTERVAL_MS) || 1_800_000;
+// Below this the fetch is a thin fallback page, not the full leaderboard:
+// pruning against it would wipe models that simply were not in that payload.
+const MIN_MODELS_FOR_PRUNE = 100;
 
 const webRoot = process.env.AI_PULSE_WEB_DIR ?? path.join(__dirname, "..", "..", "web");
-const analystEnv = {
-  geminiKey: GEMINI_KEY,
-  groqKey: GROQ_KEY,
-  cerebrasKey: CEREBRAS_KEY,
-  openrouterKey: OPENROUTER_KEY,
-};
-const chatEnv = {
-  geminiKey: GEMINI_KEY,
-  groqKey: GROQ_KEY,
-  tavilyKey: TAVILY_KEY,
-};
+const analystEnv = {};
+const chatEnv = { tavilyKey: TAVILY_KEY };
 
 getDb();
 initTheme();
@@ -183,6 +179,40 @@ app.post("/api/theme/reload", (_req, res) => {
   res.json(info);
 });
 
+function localAIResponse() {
+  const local = getLocalAIStatus();
+  return {
+    ...local,
+    model: local.model ? { ...local.model, name: local.model.label, bytes: local.model.sizeBytes } : null,
+    profiles: Object.entries(LOCAL_AI_MODELS).map(([id, model]) => ({ id, name: model.label, bytes: model.sizeBytes })),
+    recommendedProfile: local.capability.recommendedProfile,
+    hardware: {
+      memoryGB: Math.round(local.capability.ramBytes / 1024 ** 3),
+      cpus: local.capability.cpuCores,
+      platform: process.platform,
+      arch: process.arch,
+      supported: Boolean(runtimeSpec(process.platform, process.arch)),
+    },
+  };
+}
+
+app.get("/api/local-ai", (_req, res) => res.json(localAIResponse()));
+app.post("/api/local-ai/setup", (req, res) => {
+  const profile = req.body?.profile;
+  if (profile !== undefined && !["auto", "light", "balanced"].includes(profile)) {
+    res.status(400).json({ error: "Choose auto, light or balanced." });
+    return;
+  }
+  void setupLocalAI({ profile: profile === "auto" ? undefined : profile })
+    .catch((error) => console.warn("[Local AI] Setup failed:", error.message));
+  res.status(202).json(localAIResponse());
+});
+app.post("/api/local-ai/cancel", (_req, res) => {
+  cancelLocalAISetup();
+  res.json(localAIResponse());
+});
+registerSocialRoutes(app);
+
 app.get("/api/health", (_req, res) => {
   const health = evaluatePollHealth(AA_POLL);
   const analyst = getAnalystStatus(analystEnv);
@@ -200,6 +230,9 @@ app.get("/api/health", (_req, res) => {
     },
     newsUpdatedAt: getMeta("news_last_poll"),
     videosUpdatedAt: getMeta("videos_last_poll"),
+    videoSources: getVideoFetchHealth(),
+    localAI: localAIResponse(),
+    refreshing: { benchmarks: benchmarkLock.running, videos: videosLock.running },
   });
 });
 
@@ -210,6 +243,21 @@ app.get("/api/rankings", (_req, res) => {
   } catch (err) {
     console.error("[API] /api/rankings failed:", err);
     res.status(503).json({ error: "temporarily unavailable" });
+  }
+});
+
+app.get("/api/benchmarks", (_req, res) => {
+  res.json(getPublicBenchmarks());
+});
+app.post("/api/benchmarks/refresh", async (_req, res) => {
+  try {
+    await refreshPublicBenchmarks();
+    const payload = getPublicBenchmarks();
+    broadcast({ type: "public_benchmarks", payload });
+    res.json(payload);
+  } catch (error) {
+    console.warn("[Public Benchmarks] Refresh failed:", (error as Error).message);
+    res.status(503).json({ error: "Public benchmark refresh is temporarily unavailable", ...getPublicBenchmarks() });
   }
 });
 
@@ -257,7 +305,7 @@ app.get("/api/videos", (req, res) => {
     const kind = rawKind === "company" || rawKind === "all" ? rawKind : "creator";
     res.json({
       items: getVideos(limit, kind),
-      updatedAt: getMeta("videos_last_poll"),
+      updatedAt: getMeta(kind === "all" ? "videos_last_poll" : `videos_${kind}_last_poll`),
     });
   } catch (err) {
     console.error("[API] /api/videos failed:", err);
@@ -420,7 +468,7 @@ app.post("/api/chat", async (req, res) => {
     const available = listAvailableModels(chatEnv);
     if (!available.some((m) => m.id === modelId)) {
       res.status(400).json({
-        error: "Model not available. Configure GEMINI_API_KEY and/or GROQ_API_KEY in .env.",
+        error: "The local model is not ready. Open Settings → Local AI to complete setup.",
       });
       return;
     }
@@ -457,6 +505,22 @@ async function pollBenchmarks(): Promise<void> {
     raw.sort((a, b) => b.intelligence - a.intelligence);
     // Persist + broadcast first; HF accessibility lookups are slow and must not block readiness.
     const newSlugs = upsertModels(raw);
+
+    // Rows no source reports anymore must not keep ranking. Slugs still present
+    // in `raw` were just rewritten with live values, so only the leftovers go.
+    const liveSlugs = new Set(raw.map((m) => m.slug));
+    const removedDemo = deleteModelsBySlugs(LEGACY_DEMO_SLUGS.filter((slug) => !liveSlugs.has(slug)));
+    if (removedDemo.length > 0) {
+      console.log(`[Poll] Dropped ${removedDemo.length} legacy demo rows: ${removedDemo.join(", ")}`);
+    }
+    if (raw.length >= MIN_MODELS_FOR_PRUNE) {
+      const obsolete = listModelSlugs().filter((slug) => !liveSlugs.has(slug));
+      const pruned = deleteModelsBySlugs(obsolete).length;
+      if (pruned > 0) {
+        console.log(`[Poll] Pruned ${pruned} models absent from the live feed`);
+      }
+    }
+
     recordSuccessfulPoll();
     const snapshot = buildRankingsSnapshot(getAllModels(), AA_POLL);
     const leaderChanges = detectLeaderChanges(snapshot.winners);
@@ -613,7 +677,16 @@ async function pollVideos(): Promise<void> {
 
     const newCreatorVideos = upsertVideos(creatorVideos);
     const newCompanyVideos = upsertVideos(companyVideos);
-    setMeta("videos_last_poll", new Date().toISOString());
+    const videoStates = [getVideoFetchHealth("creator"), getVideoFetchHealth("company")].flat().filter(Boolean);
+    if (videoStates.some((health) => health && health.succeeded > 0)) {
+      setMeta("videos_last_poll", new Date().toISOString());
+    }
+    for (const kind of ["creator", "company"] as const) {
+      const health = getVideoFetchHealth(kind);
+      if (health && !Array.isArray(health) && health.succeeded > 0 && health.lastSuccessAt) {
+        setMeta(`videos_${kind}_last_poll`, health.lastSuccessAt);
+      }
+    }
     broadcast({
       type: "videos",
       payload: {
@@ -660,9 +733,7 @@ async function runAnalyst(trigger: ChangeEvent) {
 async function bootstrap(): Promise<void> {
   const removed = clearNewsWithHtml();
   if (removed > 0) console.log(`[News] Cleared ${removed} items with raw HTML`);
-  await pollBenchmarks();
-  await pollNews();
-  await pollVideos();
+  await Promise.all([runBenchmarkPoll(), pollNews(), runVideoPoll()]);
   if (!getLatestBriefing()) {
     try {
       await runAnalyst({ type: "manual", details: {} });
@@ -693,11 +764,30 @@ function withPollGuard(name: string, lock: { running: boolean }, fn: () => Promi
 const benchmarkLock = { running: false };
 const newsLock = { running: false };
 const videosLock = { running: false };
+const runBenchmarkPoll = withPollGuard("benchmarks", benchmarkLock, pollBenchmarks);
+const runVideoPoll = withPollGuard("videos", videosLock, pollVideos);
+let lastManualBenchmark = 0;
+let lastManualVideo = 0;
+app.post("/api/rankings/refresh", (_req, res) => {
+  if (!benchmarkLock.running && Date.now() - lastManualBenchmark >= 60_000) {
+    lastManualBenchmark = Date.now();
+    void runBenchmarkPoll();
+  }
+  res.status(202).json({ refreshing: benchmarkLock.running });
+});
+app.post("/api/videos/refresh", (_req, res) => {
+  if (!videosLock.running && Date.now() - lastManualVideo >= 60_000) {
+    lastManualVideo = Date.now();
+    void runVideoPoll();
+  }
+  res.status(202).json({ refreshing: videosLock.running });
+});
+
 
 const timers: NodeJS.Timeout[] = [
-  setInterval(withPollGuard("benchmarks", benchmarkLock, pollBenchmarks), AA_POLL),
+  setInterval(runBenchmarkPoll, AA_POLL),
   setInterval(withPollGuard("news", newsLock, pollNews), RSS_POLL),
-  setInterval(withPollGuard("videos", videosLock, pollVideos), YT_POLL),
+  setInterval(runVideoPoll, YT_POLL),
   setInterval(() => {
     const health = evaluatePollHealth(AA_POLL);
     if (health.stale) {
@@ -715,12 +805,16 @@ const timers: NodeJS.Timeout[] = [
 // sends SIGINT. Stop polling, drop clients, and close SQLite so the WAL is
 // checkpointed instead of being left for the next open to recover.
 let shuttingDown = false;
-function shutdown(signal: NodeJS.Signals): void {
+async function shutdown(signal: NodeJS.Signals): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
   console.log(`[Server] ${signal} received — shutting down`);
   for (const t of timers) clearInterval(t);
   stopTheme();
+  stopSocialPolling();
+  stopPublicBenchmarkPolling();
+  cancelLocalAISetup();
+  await stopLocalAI();
   for (const client of clients) client.terminate();
   wss.close();
   server.close();
@@ -745,5 +839,8 @@ server.on("error", (err) => {
 
 server.listen(PORT, BIND_HOST, () => {
   console.log(`AI Pulse server v${APP_VERSION} running at http://${BIND_HOST}:${PORT}`);
+  Promise.resolve(initializeLocalAI()).catch((err) => console.warn("[Local AI] Initialization:", err.message));
+  initializeSocialPolling();
+  startPublicBenchmarkPolling(() => broadcast({ type: "public_benchmarks", payload: getPublicBenchmarks() }));
   bootstrap().catch((err) => console.error("Bootstrap failed:", err));
 });

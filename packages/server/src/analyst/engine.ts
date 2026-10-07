@@ -50,6 +50,16 @@ function recordOutcome(result: LlmResult | null): void {
   setMeta("analyst_last_outcome", JSON.stringify(outcome));
 }
 
+function isPickList(value: unknown): boolean {
+  return Array.isArray(value) && value.every((item) => typeof item === "string" || (item && typeof item === "object" && typeof (item as { id?: unknown }).id === "string"));
+}
+
+function periodPickList(value: unknown): unknown {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === "object") return (value as { picks?: unknown }).picks;
+  return undefined;
+}
+
 export function getAnalystOutcome(): AnalystOutcome | null {
   const raw = getMeta("analyst_last_outcome");
   if (!raw) return null;
@@ -72,7 +82,8 @@ export async function generateBriefing(
     diff: {
       newModelSlugs: context.newModelSlugs,
       leaderChanges: context.leaderChanges,
-      topNews: context.topNews.slice(0, 5).map((n) => ({
+      topNews: context.topNews.slice(0, 5).map((n, i) => ({
+        id: `n${i + 1}`,
         title: n.title,
         source: n.source,
         score: n.relevanceScore,
@@ -84,19 +95,27 @@ export async function generateBriefing(
   };
 
   const llm = await routeLlmJson(buildAnalystPrompt(promptContext), env);
-  recordOutcome(llm);
   const rules = buildRulesBriefing(promptContext);
-  const data = llm?.data ?? rules;
+  const data: Record<string, unknown> = llm?.data && typeof llm.data === "object"
+    ? (llm.data as Record<string, unknown>)
+    : (rules as unknown as Record<string, unknown>);
+  const newsById = new Map(context.topNews.map((n, i) => [`n${i + 1}`, n]));
+  const selectedHeadline = typeof data.headlineNewsId === "string" ? newsById.get(data.headlineNewsId) : undefined;
+  const selectedBreaking = Array.isArray(data.breakingNewsIds)
+    ? data.breakingNewsIds.filter((id): id is string => typeof id === "string").map((id) => newsById.get(id)).filter((n): n is NewsItem => Boolean(n)).slice(0, 3)
+    : [];
 
+  const accepted = llm && (selectedHeadline || selectedBreaking.length > 0) ? llm : null;
+  recordOutcome(accepted);
   return saveBriefing({
-    headline: String(data.headline ?? rules.headline),
-    breaking: Array.isArray(data.breaking) ? data.breaking.map(String) : rules.breaking,
-    watchList: Array.isArray(data.watchList) ? data.watchList.map(String) : rules.watchList,
-    newModels: Array.isArray(data.newModels) ? data.newModels.map(String) : rules.newModels,
-    yourStack: String(data.yourStack ?? rules.yourStack),
-    upgradeSuggestion: data.upgradeSuggestion ? String(data.upgradeSuggestion) : rules.upgradeSuggestion,
-    upgradeSlug: data.upgradeSlug ? String(data.upgradeSlug) : rules.upgradeSlug,
-    analystSource: llm?.provider ?? "rules",
+    headline: selectedHeadline ? `${selectedHeadline.title} (${selectedHeadline.source})` : rules.headline,
+    breaking: selectedBreaking.length ? selectedBreaking.map((n) => `${n.title} (${n.source})`) : rules.breaking,
+    watchList: rules.watchList,
+    newModels: rules.newModels,
+    yourStack: rules.yourStack,
+    upgradeSuggestion: rules.upgradeSuggestion,
+    upgradeSlug: rules.upgradeSlug,
+    analystSource: accepted?.provider ?? "rules",
     createdAt: new Date().toISOString(),
   });
 }
@@ -105,16 +124,27 @@ function normalizePicks(
   raw: unknown,
   idSet: Set<string>,
   candidates: NewsItem[],
+  aliases?: Map<string, string>,
 ): { id: string; reason: string }[] {
-  let picks: { id: string; reason: string }[] = [];
-  if (Array.isArray(raw)) {
-    picks = (raw as { id?: string; reason?: string }[])
+  if (!Array.isArray(raw)) return buildRulesAiPicks(candidates);
+  if (raw.length === 0) return [];
+  const picks = (raw as (string | { id?: string; reason?: string })[])
+      .map((p) => {
+        const id = typeof p === "string" ? p : p.id;
+        return { id: id ? (aliases?.get(String(id)) ?? String(id)) : "" };
+      })
       .filter((p) => p.id && idSet.has(p.id))
-      .map((p) => ({ id: String(p.id), reason: String(p.reason ?? "Groundbreaking AI development") }))
+      .map((p) => {
+        const candidate = candidates.find((item) => item.id === p.id);
+        const reason = candidate?.category === "releases"
+          ? "Notable release or launch signal"
+          : candidate?.category === "benchmarks"
+            ? "Benchmark or leaderboard movement"
+            : "High-relevance AI development";
+        return { id: p.id, reason };
+      })
       .slice(0, 8);
-  }
-  if (picks.length === 0) picks = buildRulesAiPicks(candidates);
-  return picks;
+  return picks.length ? picks : buildRulesAiPicks(candidates);
 }
 
 export async function curateAiPicks(period: NewsPeriod, env: AnalystEnv): Promise<NewsItem[]> {
@@ -124,21 +154,23 @@ export async function curateAiPicks(period: NewsPeriod, env: AnalystEnv): Promis
     return [];
   }
 
+  const aliases = new Map<string, string>();
   const prompt = buildAiPickPrompt(
     period,
-    candidates.map((n) => ({
-      id: n.id,
+    candidates.map((n, i) => ({
+      id: `n${i + 1}`,
       title: n.title,
       source: n.source,
       score: n.relevanceScore,
       summary: n.summary.slice(0, 160),
     })),
   );
+  candidates.forEach((n, i) => aliases.set(`n${i + 1}`, n.id));
 
   const llm = await routeLlmJson(prompt, env);
-  recordOutcome(llm);
+  recordOutcome(llm && isPickList(llm.data?.picks) ? llm : null);
   const idSet = new Set(candidates.map((c) => c.id));
-  const picks = normalizePicks(llm?.data?.picks, idSet, candidates);
+  const picks = normalizePicks(llm?.data?.picks, idSet, candidates, aliases);
 
   clearAiPicksForPeriod(period);
   setAiPicks(picks.map((p) => ({ ...p, period })));
@@ -153,11 +185,13 @@ export async function curateAiPicksAllPeriods(
   const byPeriod: Record<string, NewsItem[]> = {};
   const candidateMap: Record<string, { id: string; title: string; source: string; score: number; summary: string }[]> =
     {};
+  const aliases = new Map<string, string>();
+  let nextId = 1;
 
   for (const period of periods) {
-    const candidates = getNews(20, "all", period, "all");
+    const candidates = getNews(12, "all", period, "all");
     candidateMap[period] = candidates.map((n) => ({
-      id: n.id,
+      id: aliases.get(n.id) ?? (() => { const id = `n${nextId++}`; aliases.set(n.id, id); return id; })(),
       title: n.title,
       source: n.source,
       score: n.relevanceScore,
@@ -166,19 +200,22 @@ export async function curateAiPicksAllPeriods(
   }
 
   const llm = await routeLlmJson(buildBatchedAiPickPrompt(candidateMap), env);
-  recordOutcome(llm);
-  const picksRoot = (llm?.data?.periods as Record<string, { picks?: unknown }>) ?? {};
+  const root = llm?.data?.periods;
+  const picksRoot = root && typeof root === "object" && !Array.isArray(root) ? root as Record<string, unknown> : {};
+  const isBatchShape = periods.every((period) => !candidateMap[period].length || isPickList(periodPickList(picksRoot[period])));
+  recordOutcome(llm && isBatchShape ? llm : null);
 
   for (const period of periods) {
-    const candidates = getNews(40, "all", period, "all");
+    const candidates = getNews(20, "all", period, "all");
     if (candidates.length === 0) {
       clearAiPicksForPeriod(period);
       byPeriod[period] = [];
       continue;
     }
     const idSet = new Set(candidates.map((c) => c.id));
-    const periodPicks = picksRoot[period]?.picks ?? (llm?.data as { picks?: unknown })?.picks;
-    const picks = normalizePicks(periodPicks, idSet, candidates);
+    const reverseAliases = new Map([...aliases.entries()].map(([real, short]) => [short, real]));
+    const periodPicks = periodPickList(picksRoot[period]) ?? (llm?.data as { picks?: unknown })?.picks;
+    const picks = normalizePicks(periodPicks, idSet, candidates, reverseAliases);
     clearAiPicksForPeriod(period);
     setAiPicks(picks.map((p) => ({ ...p, period })));
     byPeriod[period] = getNews(20, "all", period, "ai_pick");

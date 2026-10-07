@@ -11,10 +11,11 @@
     "app": "npm run build && npm run start -w @ai-pulse/widget",
     "widget": "npm run start -w @ai-pulse/widget",
     "dist:linux": "npm run dist:linux -w @ai-pulse/widget",
-    "gate": "npm run build && node --check packages/web/app.js && node --check packages/widget/renderer/settings.js",
-    "linux:install": "npm run linux:install -w @ai-pulse/widget"
+    "gate": "npm run build && node --check packages/web/app.js && node --check packages/widget/renderer/settings.js && npm run smoke",
+    "linux:install": "npm run linux:install -w @ai-pulse/widget",
+    "smoke": "node --import tsx packages/server/scripts/smoke-regressions.ts && node --import tsx packages/server/scripts/news-smoke-regressions.ts && node --import tsx packages/server/scripts/storage-smoke-regressions.ts && node --import tsx packages/server/scripts/social-smoke-regressions.ts && node --import tsx packages/server/scripts/public-sources-smoke.ts"
   },
-  "version": "1.1.0",
+  "version": "2.0.0",
   "engines": {
     "node": ">=22.14"
   }

@@ -1,6 +1,6 @@
 # Releasing
 
-AI Pulse ships as a Windows installer and Linux packages (AppImage + pacman), all built and published by GitHub Actions. You cut a release by pushing a **semantic version tag** — CI does the rest.
+AI Pulse ships as native Windows (x64), macOS (Intel x64 and Apple Silicon arm64), and Linux x64 packages. GitHub Actions builds every platform first and publishes one release only after all platform jobs succeed. You cut a release by pushing a **semantic version tag** — CI does the rest.
 
 ## Version tags
 
@@ -17,8 +17,9 @@ The tag also decides which Linux packages are built: every tag gets an **AppImag
 
 ## Publishing a release
 
-1. Bump package versions if you want the shipped version to match the tag (optional).
-2. Create and push the tag. `release.yml` builds the Windows installer on `windows-latest` and the Linux packages on `ubuntu-latest`, then publishes both sets of assets to one GitHub Release.
+1. Bump the versions in all three `package.json` files (root, `packages/server`, and `packages/widget`) so the shipped version matches the tag.
+2. Run the manual `build-installer.yml` workflow and review every platform artifact.
+3. Only after Fernando explicitly approves, create and push the tag. `release.yml` builds Windows, macOS, and Linux assets on native runners, then publishes all sets of assets in one final job after every build succeeds.
 
 ### Release candidate
 
@@ -44,25 +45,31 @@ Three workflows run in GitHub Actions:
 
 | Workflow | Trigger | Runner | What it does |
 | --- | --- | --- | --- |
-| `ci.yml` | Push / PR to `main` | Ubuntu | `npm ci` + `npx install-electron`, smoke-test `better-sqlite3` under Node and Electron (Node-API), build the server + app, syntax-check the browser JS, boot the bundled server and assert `GET /api/health`, then `electron-builder --linux --dir` as a packaging sanity check. |
-| `release.yml` | Push of a `v*` tag | Windows + Ubuntu | Job `windows-installer` builds the NSIS installer; job `linux-packages` builds the AppImage (plus the pacman package for non-rc tags; it installs `libarchive-tools` first because fpm's pacman writer needs `bsdtar`). Both publish to the same GitHub Release. |
-| `build-installer.yml` | Manual (`workflow_dispatch`), for iterating on the installers without cutting a release | Windows / Ubuntu matrix | Builds the same installers without publishing, as workflow artifacts. |
+| `ci.yml` | Push / PR to `main` | Ubuntu + Windows + macOS | Builds and smoke-tests the app on each desktop platform, including Node-API/better-sqlite3 under Node and Electron; the Ubuntu job also boots the bundled server and asserts `GET /api/health`. The platform matrix packages Windows x64, macOS x64/arm64, and Linux x64 without publishing. |
+| `release.yml` | Push of a `v*` tag | Windows + macOS + Ubuntu | Builds Windows x64 NSIS, macOS x64/arm64 DMG+ZIP, and Linux x64 AppImage/deb/rpm (plus pacman on final tags), then publishes only from the all-green `publish` job. |
+| `build-installer.yml` | Manual (`workflow_dispatch`) | Windows + macOS + Ubuntu matrix | Builds the same platform installers without publishing, as workflow artifacts. |
 
 ## Where artifacts land
 
 Published artifacts attach to the **GitHub Release** for the tag.
 
-Windows (job `windows-installer`):
+Windows (job `windows-installer`, x64):
 
 - `AI Pulse-Setup-<version>.exe` — the NSIS installer
 - `latest.yml` — Windows update feed
 - `.blockmap`
 
-Linux (job `linux-packages`):
+macOS (job `macos-installer`):
+
+- `AI Pulse-<version>-x64.dmg` / `AI Pulse-<version>-arm64.dmg`
+- matching `.zip` archives. macOS updates are manual for now because Intel and Apple Silicon feeds must remain architecture-specific.
+
+Linux (job `linux-packages`, x64):
 
 - `ai-pulse-<version>.AppImage` — every release, including `-rc` prereleases
 - `ai-pulse-<version>.pacman` — final releases only
-- `latest-linux.yml` — AppImage update feed (the pacman install reports updates as unsupported)
+- `ai-pulse-<version>.deb` and `.rpm`
+- `latest-linux.yml` — AppImage update feed (the pacman and macOS installs report updates as unsupported)
 
 ## Building the installers locally
 
@@ -70,7 +77,8 @@ To produce the installers on your own machine:
 
 ```bash
 npm run dist -w @ai-pulse/widget            # Windows: NSIS installer (run on Windows)
-npm run dist:linux -w @ai-pulse/widget      # Linux: AppImage + pacman (run on Linux)
+npm run dist:mac -w @ai-pulse/widget        # macOS: DMG + ZIP (run on macOS)
+npm run dist:linux -w @ai-pulse/widget      # Linux: AppImage + deb + rpm + pacman (run on Linux)
 npm run dist:linux:dir -w @ai-pulse/widget  # Linux: unpacked app dir, no installer
 ```
 
@@ -78,10 +86,19 @@ The build output lands in `packages/widget/release`. The pacman target needs `bs
 
 ## Code signing
 
-Code signing is **not configured**. The Windows installer and the Linux packages are all **unsigned builds**: Windows SmartScreen may warn users on first run, and Linux users get no signature to verify.
+Code signing and notarization are **not configured**. Windows and macOS builds are unsigned, so SmartScreen/Gatekeeper may warn users; Linux packages carry no signature either. Production signing requires platform credentials and should be enabled before presenting a release as trusted.
 
 ## Packaging detail
 
 esbuild bundles the server into a single ESM file (`dist/server/index.mjs`), with `better-sqlite3` and `node-notifier` marked external. `asar` is disabled so those native/optional modules resolve via `node_modules`.
 
-The toolchain is Electron 43, electron-builder 26, and `better-sqlite3` 13 on Node >= 22.14. `better-sqlite3` >= 13 is a **Node-API** addon (Node-API 10), so one prebuilt binary loads under both Node and Electron: there is **no `@electron/rebuild` step and no per-runtime ABI rebuild** anywhere — CI merely smoke-tests the module under both runtimes. Electron >= 42 no longer downloads its binary during `npm install`, which is why every workflow runs `npx install-electron` right after `npm ci`.
+The toolchain is Electron 43, electron-builder 26, and `better-sqlite3` 13 on Node >= 22.14. Node-API removes Electron ABI coupling, but native modules remain architecture-specific; this is why macOS builds run once on Intel and once on Apple Silicon, and why this release matrix intentionally publishes Linux x64 only until a native Linux arm64 build lane is available. The bundled llama.cpp b11474 CPU assets are likewise selected by OS and architecture and are verified by SHA-256 before first use. Electron >= 42 no longer downloads its binary during `npm install`, which is why every workflow runs `npx install-electron` right after `npm ci`.
+
+The release gate must retain the native smoke checks for `better-sqlite3` under both
+Node and Electron, the bundled server health check, and a real package build for
+each matrix entry. Ubuntu RPM packaging requires `rpmbuild` from the `rpm` package;
+the workflow installs it explicitly. No release should claim Linux arm64, Windows
+arm64, or macOS automatic updates until those lanes and feeds are validated. The
+published matrix is not a promise of compatibility with every historical OS
+version; validate any additional target on its native runner before advertising
+it.

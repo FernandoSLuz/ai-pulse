@@ -7,6 +7,25 @@ import type { VideoItem } from "../types.js";
 const FEED_TIMEOUT_MS = 12_000;
 const CONCURRENCY = 4;
 
+export interface VideoFetchHealth {
+  kind: "creator" | "company";
+  attempted: number;
+  succeeded: number;
+  failed: number;
+  items: number;
+  partial: boolean;
+  lastAttemptAt: string;
+  lastSuccessAt: string | null;
+  errors: string[];
+}
+
+const videoHealth: Record<"creator" | "company", VideoFetchHealth | null> = { creator: null, company: null };
+
+export function getVideoFetchHealth(kind?: "creator" | "company"): VideoFetchHealth | VideoFetchHealth[] | null {
+  if (kind) return videoHealth[kind];
+  return [videoHealth.creator, videoHealth.company].filter((v): v is VideoFetchHealth => Boolean(v));
+}
+
 const parser = new Parser({
   customFields: {
     item: [["media:group", "mediaGroup", { keepArray: false }]],
@@ -102,13 +121,15 @@ async function fetchChannelFeed(ch: YtChannel): Promise<VideoItem[]> {
     const videoId = extractVideoId(entry);
     if (!videoId) continue;
     const title = (entry.title ?? "Untitled").trim();
+    const publishedAt = entry.isoDate ?? entry.pubDate;
+    if (!publishedAt || !Number.isFinite(Date.parse(publishedAt))) continue;
     items.push({
       id: videoId,
       title,
       link: entry.link ?? `https://www.youtube.com/watch?v=${videoId}`,
       channel: ch.name,
       channelHandle: ch.handle,
-      publishedAt: entry.isoDate ?? entry.pubDate ?? new Date().toISOString(),
+      publishedAt,
       thumbnail: extractThumbnail(entry as Parser.Item & { mediaGroup?: unknown }),
       fetchedAt: new Date().toISOString(),
       kind: "creator",
@@ -122,6 +143,8 @@ async function fetchChannelFeeds(channels: YtChannel[], kind: "creator" | "compa
   const items: VideoItem[] = [];
   let ok = 0;
   let failed = 0;
+  const errors: string[] = [];
+  const attemptedAt = new Date().toISOString();
 
   for (let i = 0; i < channels.length; i += CONCURRENCY) {
     const batch = channels.slice(i, i + CONCURRENCY);
@@ -137,6 +160,7 @@ async function fetchChannelFeeds(channels: YtChannel[], kind: "creator" | "compa
             ? `timed out after ${FEED_TIMEOUT_MS}ms`
             : (err as Error).message;
           console.warn(`[YouTube] Failed ${ch.name}:`, message);
+          errors.push(`${ch.name}: ${message}`);
           return [] as VideoItem[];
         }
       }),
@@ -145,6 +169,14 @@ async function fetchChannelFeeds(channels: YtChannel[], kind: "creator" | "compa
   }
 
   console.log(`[YouTube] Completed (${kind}) with ${ok} ok, ${failed} failed (${items.length} videos)`);
+  const previous = videoHealth[kind];
+  videoHealth[kind] = {
+    kind, attempted: channels.length, succeeded: ok, failed, items: items.length,
+    partial: failed > 0 && ok > 0, lastAttemptAt: attemptedAt,
+    // Empty results after total failure must not look like a successful update.
+    lastSuccessAt: ok > 0 ? attemptedAt : previous?.lastSuccessAt ?? null,
+    errors,
+  };
 
   return items
     .map((v) => ({ ...v, kind }))

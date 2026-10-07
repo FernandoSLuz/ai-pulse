@@ -10,34 +10,23 @@ import type {
   UpgradeCandidate,
 } from "./types.js";
 
-const FREE_PRICE_MAX = 0.5;
-const BETTER_MARGIN = 2; // quality points required to suggest a replacement
+const BETTER_MARGIN = 2;
 const ALL_ROLES: StackRole[] = ["primary", "secondary", "free"];
 
+// An advertised API price of zero is distinct from inexpensive API usage.
+// Published weights allow local use subject to their license and hardware;
+// they do not promise a free/unlimited hosted service.
 function isFreeOrOpen(model: ModelRecord): boolean {
-  if (model.accessibilityScore >= 3) return true;
-  if (model.accessibility.toLowerCase().includes("open")) return true;
-  return model.priceBlended > 0 && model.priceBlended <= FREE_PRICE_MAX;
+  return model.priceBlended === 0 || ["Open weights", "Open source", "Gated"].includes(model.accessibility);
+}
+function hasPublishedWeights(model: ModelRecord): boolean {
+  return ["Open weights", "Open source", "Gated"].includes(model.accessibility);
 }
 
-/**
- * Models you can wire into Cursor for free / unlimited use via a custom OpenAI-compatible
- * endpoint (Ollama, LM Studio, etc.) — open weights or near-free open APIs.
- * Not Cursor's built-in paid catalog.
- */
-function isCursorFreeUnlimited(model: ModelRecord): boolean {
-  const acc = model.accessibility.toLowerCase();
-  if (model.accessibilityScore >= 3) return true; // Open / Gated weights
-  if (acc.includes("open")) return true;
-  // Near-free API that can still be pointed at via Override Base URL
-  if (model.priceBlended > 0 && model.priceBlended <= FREE_PRICE_MAX) return true;
-  return false;
-}
-
-/** Prefer free-unlimited Cursor-wireable models when the preference is on. */
-function preferFreeUnlimitedPool(models: ModelRecord[], prefer: boolean): ModelRecord[] {
+/** Prefer published weights when local hosting is requested. */
+function preferLocalWeightsPool(models: ModelRecord[], prefer: boolean): ModelRecord[] {
   if (!prefer) return models;
-  const free = models.filter(isCursorFreeUnlimited);
+  const free = models.filter(hasPublishedWeights);
   return free.length >= 3 ? free : models;
 }
 
@@ -72,7 +61,8 @@ function toCandidate(
     name: model.name,
     score: entryScore(model, areas),
     intelligenceDelta: current ? model.intelligence - current.intelligence : model.intelligence,
-    priceDelta: current ? model.priceBlended - current.priceBlended : model.priceBlended,
+    priceDelta: current && model.priceBlended !== null && current.priceBlended !== null
+      ? model.priceBlended - current.priceBlended : 0,
     reason,
   };
 }
@@ -93,15 +83,15 @@ function recommendForEntry(
   // Free-unlimited preference only shapes the Free role (local / custom endpoint in Cursor).
   let pool =
     entry.role === "free"
-      ? preferFreeUnlimitedPool(models, preferFreeUnlimited)
+      ? preferLocalWeightsPool(models, preferFreeUnlimited)
       : models;
   pool = pool.filter((m) => normalizeVariantKey(m.name) !== normalizeVariantKey(current.name));
 
   if (entry.role === "free") {
     pool = pool.filter(isFreeOrOpen);
   } else if (entry.role === "secondary") {
-    const cap = current.priceBlended > 0 ? current.priceBlended * 0.85 : 5;
-    pool = pool.filter((m) => m.priceBlended > 0 && m.priceBlended <= cap);
+    const cap = current.priceBlended !== null && current.priceBlended >= 0 ? current.priceBlended * 0.85 : 5;
+    pool = pool.filter((m) => m.priceBlended !== null && m.priceBlended >= 0 && m.priceBlended <= cap);
   }
 
   pool.sort((a, b) => entryScore(b, areas) - entryScore(a, areas));
@@ -132,7 +122,7 @@ function pickSotaForRole(
   // Only the Free role uses the "wire into Cursor for free" pool.
   let pool =
     role === "free"
-      ? preferFreeUnlimitedPool(models, preferFreeUnlimited)
+      ? preferLocalWeightsPool(models, preferFreeUnlimited)
       : models;
   pool = pool.filter((m) => !excludeSlugs.has(m.slug));
 
@@ -140,7 +130,7 @@ function pickSotaForRole(
     pool = pool.filter(isFreeOrOpen);
   } else if (role === "secondary") {
     // Budget SOTA: strong models under a mid-tier price ceiling
-    pool = pool.filter((m) => m.priceBlended > 0 && m.priceBlended <= 5);
+    pool = pool.filter((m) => m.priceBlended !== null && m.priceBlended >= 0 && m.priceBlended <= 5);
   }
 
   pool.sort((a, b) => entryScore(b, areas) - entryScore(a, areas));
@@ -149,7 +139,7 @@ function pickSotaForRole(
 
 /**
  * For any role the user hasn't configured, suggest the current SOTA for that role.
- * For Free, prefers open/local models you can run unlimited via Cursor's custom endpoint.
+ * For Free, prefers published weights for local hosting, subject to licensing and hardware.
  */
 export function findRoleGaps(
   models: ModelRecord[],
@@ -175,8 +165,8 @@ export function findRoleGaps(
     if (!pick) continue;
     usedSlugs.add(pick.slug);
 
-    const isFreeWireable = role === "free" && preferFree && isCursorFreeUnlimited(pick);
-    const providers = isFreeWireable ? ["Cursor (Ollama/custom)"] : ["Cursor"];
+    const isFreeWireable = role === "free" && preferFree && hasPublishedWeights(pick);
+    const providers = isFreeWireable ? ["Local hosting (check hardware and license)"] : ["Check provider availability"];
     gaps.push({
       role,
       modelSlug: pick.slug,
@@ -185,7 +175,7 @@ export function findRoleGaps(
       providers,
       reason:
         role === "free"
-          ? `Missing Free option — try ${pick.name} (open/local, unlimited via Cursor custom endpoint)`
+          ? `Free/local option: ${pick.name}. ${hasPublishedWeights(pick) ? "Published weights; check the license and hardware requirements." : "Published API price is $0; provider limits may apply."}`
           : `Missing ${ROLE_LABELS[role]} — SOTA pick: ${pick.name}`,
     });
   }

@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { NewsItem } from "../types.js";
+import { createHash } from "node:crypto";
 
 const FEED_TIMEOUT_MS = 15_000;
 const parser = new Parser();
@@ -100,6 +101,7 @@ function stripHtml(text: string): string {
 
 export function normalizeUrl(url: string): string {
   try {
+    if (!/^https?:$/i.test(new URL(url).protocol)) return "";
     const u = new URL(url);
     u.hash = "";
     u.hostname = u.hostname.replace(/^www\./, "");
@@ -109,14 +111,14 @@ export function normalizeUrl(url: string): string {
       }
     }
     let pathName = u.pathname.replace(/\/+$/, "") || "/";
-    return `${u.protocol}//${u.hostname}${pathName}${u.search}`;
+    return `${u.protocol}//${u.host}${pathName}${u.search}`;
   } catch {
     return url.trim().replace(/\/+$/, "");
   }
 }
 
-function hashId(link: string, title: string): string {
-  return Buffer.from(`${link}|${title}`).toString("base64url").slice(0, 32);
+export function hashId(link: string, title = ""): string {
+  return createHash("sha256").update(`${normalizeUrl(link)}|${title}`).digest("hex");
 }
 
 function normalizeTitle(title: string): string {
@@ -131,7 +133,7 @@ function titleTokens(title: string): Set<string> {
   return new Set(
     normalizeTitle(title)
       .split(" ")
-      .filter((t) => t.length > 2),
+      .filter((t) => t.length > 2 || /^\d+$/.test(t)),
   );
 }
 
@@ -142,23 +144,40 @@ function jaccard(a: Set<string>, b: Set<string>): number {
   return inter / (a.size + b.size - inter);
 }
 
-function scoreRelevance(title: string, summary: string): { score: number; category: string } {
+function contradictoryTitles(a: Set<string>, b: Set<string>): boolean {
+  const positive = ["up", "increase", "increases", "improves", "wins", "passes", "beats", "gain"];
+  const negative = ["down", "decrease", "decreases", "drops", "loses", "fails", "decline", "cuts"];
+  const has = (set: Set<string>, words: string[]) => words.some((w) => set.has(w));
+  return (has(a, positive) && has(b, negative)) || (has(a, negative) && has(b, positive));
+}
+
+function numericTokens(tokens: Set<string>): Set<string> {
+  return new Set([...tokens].filter((t) => /^\d+(?:\.\d+)?$/.test(t)));
+}
+
+export function hasAiSubject(title: string, summary: string): boolean {
+  const text = `${title} ${summary}`;
+  return /\b(ai|a\.i\.|artificial intelligence|machine learning|llm|language model|foundation model|generative|openai|anthropic|deepmind|gemini|claude|gpt|llama|deepseek|mistral|qwen|xai|grok|embeddinggemma|gemma)(?:[- ]?\d+)?\b/i.test(text);
+}
+
+export function scoreRelevance(title: string, summary: string): { score: number; category: string } {
+  if (!hasAiSubject(title, summary)) return { score: 30, category: "general" };
   const text = `${title} ${summary}`.toLowerCase();
   let score = 30;
   let category = "general";
 
   for (const kw of KEYWORDS) {
-    if (text.includes(kw)) score += 8;
+    if (new RegExp(`\\b${kw.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}\\b`, "i").test(text)) score += 8;
   }
-  if (RELEASE_WORDS.some((w) => text.includes(w))) {
+  if (RELEASE_WORDS.some((w) => new RegExp(`\\b${w}(?:s|es)?\\b`, "i").test(text))) {
     score += 20;
     category = "releases";
   }
-  if (BENCHMARK_WORDS.some((w) => text.includes(w))) {
+  if (BENCHMARK_WORDS.some((w) => new RegExp(`\\b${w}\\b`, "i").test(text))) {
     score += 15;
     category = "benchmarks";
   }
-  if (text.includes("anthropic") || text.includes("openai") || text.includes("google") || text.includes("xai") || text.includes("deepmind") || text.includes("meta ai")) {
+  if (/\b(anthropic|openai|google|xai|deepmind|meta ai)\b/i.test(text)) {
     score += 10;
     category = category === "general" ? "labs" : category;
   }
@@ -168,7 +187,7 @@ function scoreRelevance(title: string, summary: string): { score: number; catego
 
 function shouldIncludeSimonWillison(title: string, summary: string): boolean {
   const text = `${title} ${summary}`.toLowerCase();
-  return ["llm", "model", "gpt", "claude", "gemini", "ai", "api", "benchmark"].some((k) => text.includes(k));
+  return /\b(llm|model|gpt|claude|gemini|ai|api|benchmark)\b/i.test(text);
 }
 
 const CLUSTER_WINDOW_MS = 48 * 60 * 60 * 1000;
@@ -198,6 +217,10 @@ export function dedupeByCredibility(items: NewsItem[]): NewsItem[] {
 
     for (let i = 0; i < kept.length; i++) {
       if (Math.abs(t - keptTimes[i]) > CLUSTER_WINDOW_MS) continue;
+      if (contradictoryTitles(tokens, keptTokens[i])) continue;
+      const numbers = numericTokens(tokens);
+      const keptNumbers = numericTokens(keptTokens[i]);
+      if (numbers.size !== keptNumbers.size || [...numbers].some((n) => !keptNumbers.has(n))) continue;
       if (jaccard(tokens, keptTokens[i]) >= SIMILARITY_THRESHOLD) {
         duplicate = true;
         break;
@@ -206,7 +229,7 @@ export function dedupeByCredibility(items: NewsItem[]): NewsItem[] {
 
     if (duplicate) continue;
 
-    const clusterId = hashId(normalizeTitle(item.title).slice(0, 48), String(Math.floor(t / CLUSTER_WINDOW_MS)));
+    const clusterId = hashId(normLink || item.link, normalizeTitle(item.title).slice(0, 120));
     kept.push({ ...item, link: normLink || item.link, clusterId });
     keptTokens.push(tokens);
     keptTimes.push(t);
@@ -240,16 +263,21 @@ export async function fetchAllNews(): Promise<NewsFetchResult> {
             const rawSummary = entry.contentSnippet ?? entry.content ?? entry.summary ?? "";
             const title = stripHtml(rawTitle);
             const summary = stripHtml(rawSummary);
+            if (!hasAiSubject(title, summary)) continue;
             if (feed.source === "Simon Willison" && !shouldIncludeSimonWillison(title, summary)) continue;
 
             const link = normalizeUrl(entry.link ?? entry.guid ?? "");
+            if (!link) continue;
+            const rawDate = entry.isoDate ?? entry.pubDate;
+            const publishedMs = rawDate ? Date.parse(rawDate) : Number.NaN;
+            if (!Number.isFinite(publishedMs) || publishedMs > Date.now() + 5 * 60_000 || publishedMs < Date.now() - 90 * 24 * 60 * 60_000) continue;
             const { score, category } = scoreRelevance(title, summary);
             items.push({
-              id: hashId(link || title, title),
+              id: hashId(link),
               title,
-              link: link || (entry.link ?? ""),
+              link,
               source: feed.source,
-              publishedAt: entry.isoDate ?? entry.pubDate ?? new Date().toISOString(),
+              publishedAt: new Date(publishedMs).toISOString(),
               summary: summary.slice(0, 300),
               relevanceScore: score,
               category,

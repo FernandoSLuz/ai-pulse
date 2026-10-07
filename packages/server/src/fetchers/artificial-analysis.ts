@@ -29,6 +29,13 @@ interface AaRawModel {
   median_time_to_first_token_seconds?: number;
 }
 
+function nullablePrice(value: unknown): number | null {
+  if (typeof value === "boolean" || value === null || value === undefined || (typeof value === "string" && value.trim() === "")) return null;
+  if (typeof value !== "number" && typeof value !== "string") return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
 function blendedPrice(input: number, output: number): number {
   return input * 0.75 + output * 0.25;
 }
@@ -40,9 +47,11 @@ function normalizeModel(raw: AaRawModel): ModelRecord | null {
   const evals = raw.evaluations ?? {};
   const pricing = raw.pricing ?? {};
   const perf = raw.performance ?? {};
-  const priceInput = pricing.price_1m_input_tokens ?? 0;
-  const priceOutput = pricing.price_1m_output_tokens ?? 0;
-  const priceBlended = pricing.price_1m_blended_3_to_1 ?? blendedPrice(priceInput, priceOutput);
+  const priceInput = nullablePrice(pricing.price_1m_input_tokens);
+  const priceOutput = nullablePrice(pricing.price_1m_output_tokens);
+  const explicitBlended = nullablePrice(pricing.price_1m_blended_3_to_1);
+  const priceBlended = explicitBlended ??
+    (priceInput !== null && priceOutput !== null ? blendedPrice(priceInput, priceOutput) : null);
 
   const speed =
     perf.median_output_tokens_per_second ??
@@ -65,40 +74,41 @@ function normalizeModel(raw: AaRawModel): ModelRecord | null {
     priceBlended,
     speed,
     latency,
-    accessibility: "API only",
-    accessibilityScore: 1,
+    accessibility: "Unknown",
+    accessibilityScore: 0,
+    license: null,
+    licenseUrl: null,
+    weightsUrl: null,
+    priceSourceUrl: `https://artificialanalysis.ai/api/v2/language/models/free`,
     fetchedAt: new Date().toISOString(),
   };
 }
 
-function getDemoModels(): ModelRecord[] {
-  const now = new Date().toISOString();
-  const demo = [
-    { slug: "claude-fable-5", name: "Claude Fable 5", creator: "Anthropic", intelligence: 60, coding: 58, math: 55, priceInput: 5, priceOutput: 25, speed: 70, latency: 1.2 },
-    { slug: "claude-opus-4-8", name: "Claude Opus 4.8", creator: "Anthropic", intelligence: 56, coding: 54, math: 52, priceInput: 3, priceOutput: 15, speed: 62, latency: 1.5 },
-    { slug: "gpt-5-5-xhigh", name: "GPT-5.5 (xhigh)", creator: "OpenAI", intelligence: 55, coding: 53, math: 58, priceInput: 4, priceOutput: 20, speed: 70, latency: 1.8 },
-    { slug: "grok-4-5", name: "Grok 4.5", creator: "xAI", intelligence: 52, coding: 50, math: 48, priceInput: 2, priceOutput: 10, speed: 85, latency: 0.9 },
-    { slug: "gemini-2-5-pro", name: "Gemini 2.5 Pro", creator: "Google", intelligence: 50, coding: 48, math: 51, priceInput: 1.5, priceOutput: 8, speed: 90, latency: 0.7 },
-    { slug: "claude-sonnet-5", name: "Claude Sonnet 5", creator: "Anthropic", intelligence: 53, coding: 52, math: 49, priceInput: 3, priceOutput: 15, speed: 75, latency: 1.0 },
-    { slug: "deepseek-r1", name: "DeepSeek R1", creator: "DeepSeek", intelligence: 48, coding: 55, math: 60, priceInput: 0.5, priceOutput: 2, speed: 60, latency: 2.0 },
-    { slug: "llama-4-maverick", name: "Llama 4 Maverick", creator: "Meta", intelligence: 45, coding: 44, math: 42, priceInput: 0.2, priceOutput: 0.6, speed: 95, latency: 0.5 },
-    { slug: "qwen-3-235b", name: "Qwen 3 235B", creator: "Alibaba", intelligence: 47, coding: 46, math: 50, priceInput: 0.3, priceOutput: 1.2, speed: 55, latency: 1.8 },
-    { slug: "mistral-large-3", name: "Mistral Large 3", creator: "Mistral", intelligence: 46, coding: 47, math: 44, priceInput: 2, priceOutput: 6, speed: 80, latency: 0.8 },
-  ];
-
-  return demo.map((m) => ({
-    ...m,
-    priceBlended: blendedPrice(m.priceInput, m.priceOutput),
-    accessibility: m.creator === "Meta" || m.creator === "DeepSeek" || m.creator === "Alibaba" ? "Open weights" : "API only",
-    accessibilityScore: m.creator === "Meta" || m.creator === "DeepSeek" ? 4 : m.creator === "Alibaba" ? 3 : 1,
-    fetchedAt: now,
-  }));
-}
+/**
+ * Hardcoded rows shipped by older builds as a "demo" fallback when the keyed
+ * API was unreachable. They were merged into the live leaderboard and, being
+ * frozen at 2026-09 scores, outranked real current models (and resurrected
+ * retired ones such as DeepSeek R1). They must never be seeded again; this list
+ * exists only so a poll that has live data can delete leftovers.
+ */
+export const LEGACY_DEMO_SLUGS = [
+  "claude-fable-5",
+  "claude-opus-4-8",
+  "gpt-5-5-xhigh",
+  "grok-4-5",
+  "gemini-2-5-pro",
+  "claude-sonnet-5",
+  "deepseek-r1",
+  "llama-4-maverick",
+  "qwen-3-235b",
+  "mistral-large-3",
+];
 
 export async function fetchArtificialAnalysisModels(apiKey?: string): Promise<ModelRecord[]> {
   if (!apiKey) {
-    console.warn("[AA] No API key — using demo benchmark data. Add AA_API_KEY to .env for live data.");
-    return getDemoModels();
+    // Never fabricate rows: the public-site fetch covers the no-key case.
+    console.debug("[AA] No API key — skipping the keyed API (public leaderboard still applies)");
+    return [];
   }
 
   for (const endpoint of AA_ENDPOINTS) {
@@ -131,6 +141,6 @@ export async function fetchArtificialAnalysisModels(apiKey?: string): Promise<Mo
     }
   }
 
-  console.warn("[AA] All endpoints failed — falling back to demo data");
-  return getDemoModels();
+  console.warn("[AA] All endpoints failed — no keyed benchmark data this poll");
+  return [];
 }

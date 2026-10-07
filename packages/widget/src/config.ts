@@ -10,22 +10,10 @@ import { configPath, dataDir, serverBundleDir, legacyConfigPaths } from "./paths
  * The keys map is merged into the server child's environment on launch.
  */
 
-export type LlmKeyName =
-  | "GEMINI_API_KEY"
-  | "CEREBRAS_API_KEY"
-  | "GROQ_API_KEY"
-  | "OPENROUTER_API_KEY"
-  | "AA_API_KEY"
-  | "TAVILY_API_KEY";
-
-export const LLM_KEY_NAMES: LlmKeyName[] = [
-  "GEMINI_API_KEY",
-  "CEREBRAS_API_KEY",
-  "GROQ_API_KEY",
-  "OPENROUTER_API_KEY",
-  "AA_API_KEY",
-  "TAVILY_API_KEY",
-];
+// Data integrations only. Inference is always local, including after upgrades.
+export type LlmKeyName = "AA_API_KEY" | "TAVILY_API_KEY" | "X_API_BEARER_TOKEN";
+export const LLM_KEY_NAMES: LlmKeyName[] = ["AA_API_KEY", "TAVILY_API_KEY", "X_API_BEARER_TOKEN"];
+const RETIRED_INFERENCE_KEYS = ["DEEPSEEK_API_KEY", "GEMINI_API_KEY", "CEREBRAS_API_KEY", "GROQ_API_KEY", "OPENROUTER_API_KEY"];
 
 export type LeaderboardMode = "bar" | "window";
 
@@ -47,16 +35,20 @@ export interface AppConfig {
   port: number;
   autoLaunch: boolean;
   startHidden: boolean;
+  setupComplete: boolean;
   leaderboard: LeaderboardConfig;
 }
+
+export const BAR_PANEL_AVAILABLE = process.platform === "linux" && (process.env.PATH ?? "").split(path.delimiter).some((dir) => fs.existsSync(path.join(dir, "omarchy-shell")));
 
 export const DEFAULT_CONFIG: AppConfig = {
   keys: {},
   port: 3847,
   autoLaunch: true,
   startHidden: true,
+  setupComplete: false,
   leaderboard: {
-    mode: process.platform === "linux" ? "bar" : "window",
+    mode: BAR_PANEL_AVAILABLE ? "bar" : "window",
     show: true,
     dockSide: "right",
     monitor: "",
@@ -77,9 +69,10 @@ function coerce(raw: unknown): AppConfig {
   const lb = (obj.leaderboard ?? {}) as Partial<LeaderboardConfig>;
   return {
     keys,
-    port: Number(obj.port) || DEFAULT_CONFIG.port,
+    port: Number.isInteger(obj.port) && Number(obj.port) >= 1024 && Number(obj.port) <= 65535 ? Number(obj.port) : DEFAULT_CONFIG.port,
     autoLaunch: obj.autoLaunch ?? DEFAULT_CONFIG.autoLaunch,
     startHidden: obj.startHidden ?? DEFAULT_CONFIG.startHidden,
+    setupComplete: obj.setupComplete === true,
     leaderboard: {
       mode: lb.mode === "bar" || lb.mode === "window" ? lb.mode : DEFAULT_CONFIG.leaderboard.mode,
       show: lb.show ?? DEFAULT_CONFIG.leaderboard.show,
@@ -171,7 +164,7 @@ export function saveConfig(config: AppConfig): void {
     /* backup is best-effort */
   }
   const tmp = `${file}.tmp`;
-  fs.writeFileSync(tmp, data, "utf8");
+  fs.writeFileSync(tmp, data, { encoding: "utf8", mode: 0o600 });
   try {
     fs.renameSync(tmp, file);
   } catch {
@@ -197,7 +190,10 @@ export function serverEnv(config: AppConfig): NodeJS.ProcessEnv {
     AI_PULSE_VERSION: app.getVersion(),
     PORT: String(config.port),
   };
-  // config.json keys win over any inherited env so the app's Settings are authoritative.
+  // Cloud inference keys are never inherited by the local-only server.
+  for (const name of RETIRED_INFERENCE_KEYS) delete env[name];
+  // Saved data-integration settings are authoritative, including cleared keys.
+  for (const name of LLM_KEY_NAMES) delete env[name];
   for (const [name, value] of Object.entries(config.keys)) {
     if (value) env[name] = value;
   }

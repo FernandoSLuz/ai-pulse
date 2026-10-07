@@ -1,37 +1,24 @@
 # Reliability & self-healing
 
-AI Pulse is built to keep running and keep curating even when individual cloud APIs get flaky. This page explains the two mechanisms that make that true: **AI curation resilience** (how the analyst survives provider outages) and **service self-healing** (how the desktop app keeps the background server alive).
+AI Pulse is built to keep running and keep curating on ordinary desktop hardware. This page explains the local runtime setup, deterministic fallback, and service self-healing.
 
 ---
 
 ## AI curation resilience
 
-Curation is **cloud-only** — there are no local models. Instead, an LLM router rotates across free cloud providers and uses the **first one that answers with valid JSON**. If your top choice is rate-limited or down, the next one picks up the run.
+Curation and chat run locally through llama-server and a downloaded GGUF selected from the model catalogue. First setup detects RAM and recommends a light or balanced profile, downloads it with progress, verifies its hash, and permits cancellation. No cloud model fallback exists.
 
-### Provider rotation order
+### Local profiles
 
-The router always tries candidates in this fixed order:
+The app offers two general profiles:
 
-| # | Provider | Model |
+| # | Profile | Purpose |
 |---|----------|-------|
-| 1 | Gemini | 3.5 Flash |
-| 2 | Cerebras | Llama 3.3 70B |
-| 3 | Groq | Llama 3.1 8B |
-| 4 | OpenRouter | Llama 3.3 70B (`:free`) |
-| 5 | Gemini | 3.5 Flash Lite |
-| 6 | OpenRouter | DeepSeek V3 (`:free`) |
+| 1 | Light | Qwen3.5 0.8B Q4 GGUF (about 537 MiB; 4 GiB recommended RAM) |
+| 2 | Balanced | Qwen3 1.7B Q8_0 GGUF (about 1.7 GiB; 8 GiB recommended RAM) |
 
-### Per-candidate backoff
-
-Each candidate carries its **own** backoff state, so one provider misbehaving never poisons the others. When a candidate fails, it's classified and parked accordingly:
-
-| Classification | Trigger | Backoff |
-|----------------|---------|---------|
-| `rate_limit` | 429 / quota exceeded | Honors the provider's own retry hint |
-| `unavailable` | Bad model id / 400 / 401 / 403 / 404 | Parks the candidate for **~12h** |
-| `error` | Transient failures | Cools down for **~2m** |
-
-The router simply skips any candidate that's currently in backoff and moves to the next one in the list.
+The runtime records download, hash verification, startup, and cancellation states. A
+missing or failed model never triggers a cloud fallback.
 
 ### No silent degradation
 
@@ -45,25 +32,38 @@ GET /api/health
 
 The response includes full **analyst provider status** plus the **last outcome** (`lastOutcome`), which is what the app surfaces in the UI:
 
-- `AI: Gemini ✓` — a cloud provider served the last run
-- `AI: degraded (rules)` — every provider was unavailable and deterministic rules were used
+- `AI: local <profile> ✓` — the selected local model served the last run
+- `AI: degraded (rules)` — deterministic rules were used because the local model was unavailable
 
 Because the outcome is persisted and reported, a degraded state is always visible rather than hidden.
 
-### You need at least one key — more is better
+No AI provider key is required. Optional `AA_API_KEY` enriches benchmark records,
+`TAVILY_API_KEY` enables web search, and `X_API_BEARER_TOKEN` fetches official X
+posts. None of these integrations supplies a model or is used as a fallback:
+inference is local-only, and a missing model uses deterministic rules rather than
+an online model.
 
-You need **at least ONE** provider key for curation to work. Adding more keys makes the system **more resilient**: with several providers configured, a single outage or quota wall just shifts the run to the next candidate instead of degrading to rules.
+### Benchmark data
 
-Where to get keys:
+Rankings do **not** depend on any key: the server reads the public Artificial Analysis
+leaderboard and mirrors the models it reports (metadata + metrics joined by slug). An
+`AA_API_KEY` is optional enrichment, and a rejected key is simply skipped — it never causes
+fabricated rows. When a full feed is fetched, models missing from it are pruned, so retired
+entries stop ranking against current ones.
 
-| Provider | Get a key |
-|----------|-----------|
-| Gemini | https://aistudio.google.com/apikey |
-| Cerebras | https://cloud.cerebras.ai |
-| Groq | https://console.groq.com/keys |
-| OpenRouter | https://openrouter.ai/keys |
+The dashboard also reads [LiveBench](https://livebench.ai/) and
+[SWE-bench Verified](https://www.swebench.com/) from their official public
+repositories, with no token setup. Sources stay in separate views because their
+scores answer different questions. LiveBench reports category-balanced model
+performance; SWE-bench reports issue resolution by an agent/model system, so
+different harnesses are not equivalent model tests. Source warnings and run-check
+status remain visible.
 
-All keys are edited in the desktop app under **Settings → Connections**.
+These boards refresh every two hours and cache successful snapshots across app
+restarts. Network or schema failures keep the previous data with a warning. A
+recent fetch is not evidence of a recent test: the UI distinguishes fetched time,
+suite version, and result dates where available. No benchmark is presented as a
+universal consensus, and missing scores, prices, or license evidence stay unknown.
 
 ---
 
@@ -118,4 +118,4 @@ curl http://localhost:3847/api/health
 
 > The default port is **3847**; change it under **Settings → Startup & service → Server port**.
 
-If the tray shows the service running, Settings shows a named AI provider (not `degraded`), and `/api/health` returns cleanly, everything is healthy.
+If the tray shows the service running, Settings shows a ready local profile (not `degraded`), and `/api/health` returns cleanly, everything is healthy.
