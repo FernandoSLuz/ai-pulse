@@ -17,17 +17,18 @@ let state = {
   sortKey: "intelligence",
   sortDir: "desc",
   view: "overview",
-  social: { profiles: [], posts: [] },
-  pages: { news: 1, aipicks: 1, creators: 1, companies: 1, rankings: 1, social: 1 },
+  pages: { news: 1, aipicks: 1, creators: 1, companies: 1, rankings: 1 },
   benchmarkQuery: "",
   benchmarkView: "tested",
   benchmarkAccess: "all",
   benchmarkSource: "aa",
   publicBoards: [],
   videoKind: "creator",
+  videoChannels: [],
+  videoChannelPage: 1,
 };
 
-const PAGE_SIZE = { news: 5, aipicks: 5, creators: 4, companies: 4, rankings: 10, social: 10 };
+const PAGE_SIZE = { news: 5, aipicks: 5, creators: 4, companies: 4, rankings: 10 };
 
 function renderPager(id, key, total, size = PAGE_SIZE[key]) {
   const el = document.getElementById(id);
@@ -36,7 +37,7 @@ function renderPager(id, key, total, size = PAGE_SIZE[key]) {
   state.pages[key] = Math.min(state.pages[key], pages);
   if (pages <= 1) { el.innerHTML = ""; return; }
   el.innerHTML = `<button type="button" class="btn btn-ghost btn-sm" data-page="prev" ${state.pages[key] === 1 ? "disabled" : ""}>Previous</button><span>Page ${state.pages[key]} of ${pages}</span><button type="button" class="btn btn-ghost btn-sm" data-page="next" ${state.pages[key] === pages ? "disabled" : ""}>Next</button>`;
-  el.querySelectorAll("[data-page]").forEach((button) => button.addEventListener("click", () => { state.pages[key] += button.dataset.page === "next" ? 1 : -1; ({ news: renderNews, aipicks: renderAiPicks, creators: renderCreators, companies: renderCompanyVideos, rankings: renderRankings, social: renderSocial }[key])(); }));
+  el.querySelectorAll("[data-page]").forEach((button) => button.addEventListener("click", () => { state.pages[key] += button.dataset.page === "next" ? 1 : -1; ({ news: renderNews, aipicks: renderAiPicks, creators: renderCreators, companies: renderCompanyVideos, rankings: renderRankings }[key])(); }));
 }
 
 function pageItems(items, key) {
@@ -50,11 +51,10 @@ const VIEW_COPY = {
   news: ["News", "Signals and picks, with room to read what matters."],
   videos: ["Videos", "Creators and official labs, separated for quick scanning."],
   benchmarks: ["Benchmarks", "Compare the models that matter by intelligence, coding, speed, and access."],
-  social: ["X / Twitter", "Follow the people shaping AI and keep the useful posts close to your radar."],
 };
 
 function setView(view) {
-  if (!VIEW_COPY[view]) return;
+  if (!VIEW_COPY[view]) view = "overview";
   state.view = view;
   document.body.dataset.view = view;
   document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === view));
@@ -62,8 +62,7 @@ function setView(view) {
   document.getElementById("view-title").textContent = title;
   document.getElementById("view-description").textContent = description;
   if (view === "overview" || view === "news") { renderNews(); renderAiPicks(); }
-  if (view === "videos") { renderCreators(); renderCompanyVideos(); }
-  if (view === "social") loadSocial().catch((err) => console.warn("Social feed unavailable", err));
+  if (view === "videos") { setVideoKind(state.videoKind); renderCreators(); renderCompanyVideos(); loadVideoChannels().catch(showVideoChannelError); }
 }
 
 const SORTABLE = {
@@ -137,7 +136,7 @@ function onSortHeaderClick(key) {
 function connectWs() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   const ws = new WebSocket(`${proto}://${location.host}/ws`);
-  ws.onopen = () => { const el = document.getElementById("connection-status"); if (el) el.innerHTML = "<i></i> Live updates"; };
+  ws.onopen = () => { const el = document.getElementById("connection-status"); if (el) el.innerHTML = "<i></i> Local service connected"; };
   ws.addEventListener("message", (ev) => {
     try {
       const msg = JSON.parse(ev.data);
@@ -578,6 +577,58 @@ async function loadCompanyVideos() {
   state.companyVideos = data.items ?? [];
   state.companyVideosUpdatedAt = data.updatedAt ?? null;
   renderCompanyVideos();
+}
+
+function setVideoKind(kind) {
+  state.videoKind = kind === "company" ? "company" : "creator";
+  document.querySelectorAll("[data-video-kind]").forEach((button) => {
+    const selected = button.dataset.videoKind === state.videoKind;
+    button.classList.toggle("active", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  });
+  document.querySelector(".creators-panel")?.classList.toggle("hidden", state.videoKind !== "creator");
+  document.querySelector(".companies-panel")?.classList.toggle("hidden", state.videoKind !== "company");
+  document.querySelector(".companies-panel")?.classList.toggle("show-company", state.videoKind === "company");
+  state.videoChannelPage = 1;
+  renderVideoChannels();
+}
+
+function renderVideoChannels() {
+  const channels = state.videoChannels.filter((channel) => channel.kind === state.videoKind);
+  const totalPages = Math.max(1, Math.ceil(channels.length / 6));
+  state.videoChannelPage = Math.min(state.videoChannelPage, totalPages);
+  const start = (state.videoChannelPage - 1) * 6;
+  const list = document.getElementById("video-channel-list");
+  list.innerHTML = channels.slice(start, start + 6).map((channel) => `<div class="video-channel-row"><a href="https://www.youtube.com/channel/${encodeURIComponent(channel.channelId)}" target="_blank" rel="noopener noreferrer"><strong>${escapeHtml(channel.name)}</strong><span class="muted">${escapeHtml(channel.handle || channel.channelId)}</span></a>${channel.source === "user" ? `<button class="btn btn-ghost btn-sm" type="button" data-remove-channel="${escapeHtml(channel.channelId)}" aria-label="Remove ${escapeHtml(channel.name)}">Remove</button>` : '<span class="muted">Included</span>'}</div>`).join("") || '<p class="muted">No channels in this category yet.</p>';
+  list.querySelectorAll("[data-remove-channel]").forEach((button) => button.addEventListener("click", async () => {
+    button.disabled = true;
+    const kind = state.videoKind;
+    try {
+      const result = await fetchJson(`/api/videos/channels/${encodeURIComponent(button.dataset.removeChannel)}?kind=${kind}`, { method: "DELETE" });
+      state.videoChannels = result.channels || [];
+      renderVideoChannels();
+      document.getElementById("video-channel-status").textContent = "Channel removed.";
+      await Promise.allSettled([loadVideos(), loadCompanyVideos()]);
+    } catch (error) { showVideoChannelError(error); button.disabled = false; }
+  }));
+  const pager = document.getElementById("video-channel-pager");
+  pager.innerHTML = totalPages > 1 ? `<button class="btn btn-ghost btn-sm" type="button" data-channel-page="prev" ${state.videoChannelPage === 1 ? "disabled" : ""}>Previous</button><span>Page ${state.videoChannelPage} of ${totalPages}</span><button class="btn btn-ghost btn-sm" type="button" data-channel-page="next" ${state.videoChannelPage === totalPages ? "disabled" : ""}>Next</button>` : "";
+  pager.querySelectorAll("[data-channel-page]").forEach((button) => button.addEventListener("click", () => { state.videoChannelPage += button.dataset.channelPage === "next" ? 1 : -1; renderVideoChannels(); }));
+}
+
+async function loadVideoChannels() {
+  const data = await fetchJson("/api/videos/channels");
+  state.videoChannels = data.channels || [];
+  renderVideoChannels();
+}
+
+function friendlyRequestError(error) {
+  try { return JSON.parse(error.message).error || "The request could not be completed."; }
+  catch { return error.name === "AbortError" ? "The service took too long. Please try again." : error.message || "The service could not be reached."; }
+}
+
+function showVideoChannelError(error) {
+  document.getElementById("video-channel-status").textContent = friendlyRequestError(error);
 }
 
 function winnerBadges(slug, winners) {
@@ -1208,7 +1259,43 @@ document.getElementById("refresh-videos")?.addEventListener("click", () => refre
 document.getElementById("benchmark-search")?.addEventListener("input", (event) => { state.benchmarkQuery = event.target.value; state.pages.rankings = 1; renderRankings(); });
 document.querySelectorAll("[data-benchmark-view]").forEach((button) => button.addEventListener("click", () => { document.querySelectorAll("[data-benchmark-view]").forEach((b) => b.classList.remove("active")); button.classList.add("active"); state.benchmarkView = button.dataset.benchmarkView; state.pages.rankings = 1; renderRankings(); }));
 document.querySelectorAll("[data-access-filter]").forEach((button) => button.addEventListener("click", () => { document.querySelectorAll("[data-access-filter]").forEach((b) => b.classList.remove("active")); button.classList.add("active"); state.benchmarkAccess = button.dataset.accessFilter; state.pages.rankings = 1; renderRankings(); }));
-document.querySelectorAll("[data-video-kind]").forEach((button) => button.addEventListener("click", () => { document.querySelectorAll("[data-video-kind]").forEach((b) => b.classList.remove("active")); button.classList.add("active"); state.videoKind = button.dataset.videoKind; document.querySelector(".creators-panel")?.classList.toggle("hidden", state.videoKind !== "creator"); document.querySelector(".companies-panel")?.classList.toggle("hidden", state.videoKind !== "company"); document.querySelector(".companies-panel")?.classList.toggle("show-company", state.videoKind === "company"); }));
+document.querySelectorAll("[data-video-kind]").forEach((button) => button.addEventListener("click", () => setVideoKind(button.dataset.videoKind)));
+document.getElementById("add-video-channel")?.addEventListener("click", () => {
+  document.getElementById("video-channel-form").classList.remove("hidden");
+  document.getElementById("video-channel-kind").value = state.videoKind;
+  document.getElementById("video-channel-error").textContent = "";
+  document.getElementById("video-channel-input").focus();
+});
+document.getElementById("cancel-video-channel")?.addEventListener("click", () => document.getElementById("video-channel-form").classList.add("hidden"));
+document.getElementById("manage-video-channels")?.addEventListener("click", (event) => {
+  const manager = document.getElementById("video-channel-manager");
+  const hidden = manager.classList.toggle("hidden");
+  event.currentTarget.setAttribute("aria-expanded", String(!hidden));
+  if (!hidden) loadVideoChannels().catch(showVideoChannelError);
+});
+document.getElementById("video-channel-form")?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const input = document.getElementById("video-channel-input");
+  const kind = document.getElementById("video-channel-kind").value;
+  const error = document.getElementById("video-channel-error");
+  const submit = event.submitter;
+  error.textContent = "";
+  if (!input.value.trim()) { error.textContent = "Enter a YouTube channel link or handle."; return; }
+  if (submit) { submit.disabled = true; submit.textContent = "Checking channel…"; }
+  document.getElementById("video-channel-status").textContent = "Checking the channel and its public YouTube feed…";
+  try {
+    const result = await fetchJson("/api/videos/channels", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ input: input.value.trim(), kind }), timeoutMs: 90_000 });
+    state.videoChannels = result.channels || [];
+    setVideoKind(kind);
+    input.value = "";
+    document.getElementById("video-channel-form").classList.add("hidden");
+    document.getElementById("video-channel-status").textContent = `${result.addedChannel?.name || "Channel"} added to ${kind === "company" ? "Companies" : "Creators"}.`;
+    await Promise.allSettled([loadVideos(), loadCompanyVideos()]);
+  } catch (failure) {
+    error.textContent = friendlyRequestError(failure);
+    document.getElementById("video-channel-status").textContent = "Channel was not added. Check the address and try again.";
+  } finally { if (submit) { submit.disabled = false; submit.textContent = "Add channel"; } }
+});
 
 document.getElementById("stack-form").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -1462,99 +1549,9 @@ document.getElementById("chat-input")?.addEventListener("keydown", (e) => {
   }
 });
 
-/* —— X / social radar —— */
-function safeExternalUrl(value) {
-  try {
-    const url = new URL(String(value || ""), location.origin);
-    return /^https?:$/.test(url.protocol) ? url.href : "#";
-  } catch { return "#"; }
-}
-
-function renderSocial() {
-  const profilesEl = document.getElementById("social-profiles");
-  const feed = document.getElementById("social-feed");
-  if (!profilesEl || !feed) return;
-  const profiles = state.social.profiles || [];
-  profilesEl.innerHTML = profiles.length
-    ? profiles.map((p) => `<span class="profile-pill-wrap"><a class="profile-pill" href="${escapeHtml(safeExternalUrl(p.profileUrl || `https://x.com/${p.handle}`))}" target="_blank" rel="noopener">𝕏 ${escapeHtml(p.name || p.handle)}</a>${p.source === "user" ? `<button type="button" class="profile-remove" data-remove-profile="${escapeHtml(p.handle)}" aria-label="Unfollow @${escapeHtml(p.handle)}">×</button>` : ""}</span>`).join("")
-    : `<span class="muted">No profiles added yet</span>`;
-  profilesEl.querySelectorAll("[data-remove-profile]").forEach((btn) => btn.addEventListener("click", () => removeSocialProfile(btn.dataset.removeProfile)));
-  const status = document.getElementById("social-status");
-  if (status) {
-    status.textContent = state.social.configured === false
-      ? "X access is not configured. Add an X API token in AI Pulse Settings to load posts."
-      : state.social.error || (state.social.updatedAt ? `Updated ${timeAgo(state.social.updatedAt)}` : "");
-  }
-  const posts = state.social.posts || [];
-  if (!posts.length) {
-    feed.innerHTML = `<div class="empty-state"><span class="empty-mark">𝕏</span><strong>${state.social.error ? "X feed unavailable" : "Your social radar is ready"}</strong><p class="muted">${state.social.configured === false ? "Connect X in AI Pulse Settings, then refresh this view." : "Follow a profile to bring public AI posts into your radar."}</p><button type="button" class="btn btn-ghost" id="empty-add-social">Add a profile</button></div>`;
-    document.getElementById("empty-add-social")?.addEventListener("click", showSocialForm);
-    return;
-  }
-  feed.innerHTML = pageItems(posts, "social").map((p) => {
-    const link = safeExternalUrl(p.url);
-    return `<article class="social-card"><div class="social-avatar">${escapeHtml((p.authorName || p.authorHandle || "X").slice(0, 1).toUpperCase())}</div><div class="social-body"><div class="social-meta"><strong>${escapeHtml(p.authorName || "Unknown")}</strong><span>@${escapeHtml(p.authorHandle || "")}</span><span>${p.createdAt ? timeAgo(p.createdAt) : ""}</span></div><p>${escapeHtml(stripHtml(p.text || ""))}</p><a href="${escapeHtml(link)}" target="_blank" rel="noopener">Open on X ↗</a></div></article>`;
-  }).join("");
-  renderPager("social-pager", "social", posts.length);
-}
-
-async function loadSocial() {
-  try {
-    const data = await fetchJson("/api/social?limit=40");
-    state.social.posts = data.items || [];
-    state.social.profiles = data.profiles || [];
-    state.social.configured = data.configured;
-    state.social.updatedAt = data.updatedAt || data.lastAttemptAt || null;
-    state.social.error = data.error || null;
-  } catch (err) {
-    state.social.posts = [];
-    state.social.error = "Could not load the X feed right now.";
-  }
-  renderSocial();
-}
-
-function showSocialForm() {
-  const form = document.getElementById("social-profile-form");
-  form?.classList.remove("hidden");
-  document.getElementById("social-handle")?.focus();
-}
-
-function hideSocialForm() {
-  document.getElementById("social-profile-form")?.classList.add("hidden");
-  document.getElementById("social-form-error").textContent = "";
-}
-
-async function addSocialProfile(handle) {
-  const normalized = handle.trim().replace(/^@+/, "");
-  if (!/^[A-Za-z0-9_]{1,15}$/.test(normalized)) throw new Error("Use a valid @handle with up to 15 characters.");
-  try {
-    await fetchJson("/api/social/profiles", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ handle: normalized }) });
-  } catch (err) { throw new Error("Could not add that profile."); }
-  await loadSocial();
-}
-
-async function removeSocialProfile(handle) {
-  try { await fetchJson(`/api/social/profiles/${encodeURIComponent(handle)}`, { method: "DELETE" }); await loadSocial(); }
-  catch { state.social.error = "Could not remove that profile."; renderSocial(); }
-}
-
 document.querySelectorAll(".nav-item").forEach((item) => item.addEventListener("click", () => setView(item.dataset.view)));
 document.getElementById("sidebar-stack")?.addEventListener("click", promptOpenApp);
 document.getElementById("sidebar-chat")?.addEventListener("click", () => setChatOpen(true));
-document.getElementById("add-social-profile")?.addEventListener("click", showSocialForm);
-document.getElementById("cancel-social-profile")?.addEventListener("click", hideSocialForm);
-document.getElementById("social-profile-form")?.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const input = document.getElementById("social-handle");
-  const error = document.getElementById("social-form-error");
-  try { await addSocialProfile(input.value); input.value = ""; hideSocialForm(); }
-  catch (err) { error.textContent = err.message; }
-});
-document.getElementById("refresh-social")?.addEventListener("click", async () => {
-  const btn = document.getElementById("refresh-social"); btn.disabled = true; btn.textContent = "Refreshing…";
-  try { await fetchJson("/api/social/refresh", { method: "POST", timeoutMs: 90_000 }); } catch { /* cached state is still rendered */ }
-  await loadSocial(); btn.disabled = false; btn.textContent = "Refresh";
-});
 setView("overview");
 
 async function init() {

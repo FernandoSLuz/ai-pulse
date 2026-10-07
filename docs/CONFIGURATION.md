@@ -30,7 +30,6 @@ the last successful results remain cached locally.
 | --- | --- | --- | --- |
 | Artificial Analysis (`AA_API_KEY`) | Benchmark enrichment (rankings work without it) | https://artificialanalysis.ai/insights | Optional |
 | Tavily (`TAVILY_API_KEY`) | Web search only | https://app.tavily.com | Optional |
-| X (`X_API_BEARER_TOKEN`) | Official X posts; without it profiles are links | X developer portal | Optional |
 
 Notes on the optional keys:
 
@@ -77,6 +76,14 @@ The Settings window is organized into these sections:
 | 3 | Community (HN, Reddit, …) |
 
 New feed URLs must be verified with a real GET (HTTP 200 + parseable RSS/Atom + at least one item in the last 90 days) before they enter this file. YouTube `channelId` values come from `youtube.com/@handle` (`"externalId":"UC…"`), never guessed.
+
+The dashboard's **Videos → Add channel** flow accepts a YouTube username,
+`@username`, a channel URL, or a channel ID. Choose **Creators** or
+**Companies**; the selection is stored in local SQLite and the server validates
+the channel's public RSS feed before using it. No YouTube API key is required.
+The feed must have a valid response and at least one item from the last 90 days.
+A channel cannot currently be saved under both kinds because the video schema
+uses one kind per channel identity.
 
 ## Omarchy theme
 

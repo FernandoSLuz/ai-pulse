@@ -39,7 +39,6 @@
           <button class="nav-item" data-view="news" type="button"><span class="nav-icon">◉</span><span>News</span><small>Signals and picks</small></button>
           <button class="nav-item" data-view="videos" type="button"><span class="nav-icon">▶</span><span>Videos</span><small>Creators and labs</small></button>
           <button class="nav-item" data-view="benchmarks" type="button"><span class="nav-icon">↗</span><span>Benchmarks</span><small>Compare models</small></button>
-          <button class="nav-item" data-view="social" type="button"><span class="nav-icon">𝕏</span><span>X / Twitter</span><small>People you follow</small></button>
         </nav>
         <div class="sidebar-footer">
           <button class="sidebar-link" type="button" id="sidebar-stack">▣ <span>My Stack</span></button>
@@ -54,6 +53,21 @@
 
     <section id="briefing" class="briefing-card briefing-compact" data-section="overview"></section>
     <section id="role-gap-banner" class="role-gap-banner hidden" aria-live="polite" data-section="overview"></section>
+
+    <section class="panel video-management" data-section="videos">
+      <div class="panel-header">
+        <div class="segmented" role="group" aria-label="Video source"><button type="button" class="segment active" data-video-kind="creator" aria-pressed="true">Creators</button><button type="button" class="segment" data-video-kind="company" aria-pressed="false">Companies</button></div>
+        <div class="panel-actions"><button type="button" class="btn btn-ghost" id="manage-video-channels" aria-expanded="false">Manage channels</button><button type="button" class="btn btn-primary" id="add-video-channel">+ Add channel</button></div>
+      </div>
+      <form id="video-channel-form" class="channel-add-form hidden" novalidate>
+        <label for="video-channel-input">YouTube channel</label><input id="video-channel-input" type="text" placeholder="Username, @handle or channel link" maxlength="2048" autocomplete="off" required />
+        <label for="video-channel-kind">Show in</label><select id="video-channel-kind"><option value="creator">Creators</option><option value="company">Companies</option></select>
+        <button type="submit" class="btn btn-primary">Add channel</button><button type="button" class="btn btn-ghost" id="cancel-video-channel">Cancel</button>
+        <span class="form-error" id="video-channel-error" role="alert"></span>
+      </form>
+      <p id="video-channel-status" class="muted panel-sub" role="status">Add channels without a YouTube API key.</p>
+      <div id="video-channel-manager" class="hidden"><div id="video-channel-list" class="video-channel-list"></div><div id="video-channel-pager" class="pager"></div></div>
+    </section>
 
     <div class="content-grid">
       <section class="panel news-panel" data-section="news overview">
@@ -106,7 +120,6 @@
             <h2>Creators</h2>
             <span id="videos-updated" class="muted panel-sub"></span>
           </div>
-          <div class="segmented" role="tablist" aria-label="Video source"><button type="button" class="segment active" data-video-kind="creator">Creators</button><button type="button" class="segment" data-video-kind="company">Companies</button></div>
         </div>
         <div id="creators-feed" class="creators-feed"></div>
         <div class="pager" id="creators-pager"></div>
@@ -160,21 +173,6 @@
       </section>
     </div>
 
-    <section class="panel social-panel" data-section="social">
-        <div class="panel-header">
-          <div><p class="eyebrow">Curated social signal</p><h2>People shaping AI</h2><p class="muted panel-sub">Follow public voices and keep the useful posts close to your radar.</p></div>
-          <button type="button" class="btn btn-primary" id="add-social-profile">+ Add profile</button>
-        </div>
-      <form id="social-profile-form" class="social-add-form hidden" novalidate>
-        <label for="social-handle">X handle</label><input id="social-handle" name="handle" type="text" inputmode="text" autocomplete="off" placeholder="@username" maxlength="15" pattern="@?[A-Za-z0-9_]{1,15}" required />
-        <button type="submit" class="btn btn-primary">Follow</button><button type="button" class="btn btn-ghost" id="cancel-social-profile">Cancel</button>
-        <span class="form-error" id="social-form-error" role="alert"></span>
-      </form>
-      <p class="social-status muted" id="social-status" aria-live="polite"></p>
-      <div class="social-toolbar"><div class="profile-pills" id="social-profiles" role="list"></div><button type="button" class="filter active" data-social-filter="all">All posts</button><button type="button" class="btn btn-ghost btn-sm" id="refresh-social">Refresh</button></div>
-      <div id="social-feed" class="social-feed"><div class="empty-state"><span class="empty-mark">𝕏</span><strong>Loading your X feed</strong><p class="muted">Posts from the people you follow will appear here.</p></div></div>
-      <div class="pager" id="social-pager"></div>
-    </section>
       </main>
     </div>
   </div>

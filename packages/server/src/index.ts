@@ -31,7 +31,7 @@ import { fetchAaPublicSiteModels } from "./fetchers/aa-public-site.js";
 import { mergeBenchmarkModels } from "./fetchers/merge-models.js";
 import { enrichAccessibility } from "./fetchers/huggingface-access.js";
 import { fetchAllNews } from "./fetchers/rss-aggregator.js";
-import { fetchCreatorVideos, fetchCompanyVideos, getVideoFetchHealth } from "./fetchers/youtube-channels.js";
+import { fetchCreatorVideos, fetchCompanyVideos, getConfiguredYouTubeChannels, getVideoFetchHealth } from "./fetchers/youtube-channels.js";
 import { buildRankingsSnapshot, detectLeaderChanges } from "./rankings.js";
 import { evaluatePollHealth, recordSuccessfulPoll } from "./poll-health.js";
 import {
@@ -59,8 +59,8 @@ import { initTheme, getTheme, reloadTheme, onThemeChange, stopTheme } from "./th
 import type { ChangeEvent, NewsItem, NewsPeriod, StackRole, WsMessage } from "./types.js";
 import { isNewsPeriod } from "./types.js";
 import { getLocalAIStatus, initializeLocalAI, setupLocalAI, cancelLocalAISetup, stopLocalAI, LOCAL_AI_MODELS, runtimeSpec } from "./local-ai/index.js";
-import { registerSocialRoutes, initializeSocialPolling, stopSocialPolling } from "./social/routes.js";
 import { getPublicBenchmarks, refreshPublicBenchmarks, startPublicBenchmarkPolling, stopPublicBenchmarkPolling } from "./benchmarks/public-sources.js";
+import { registerYouTubeChannelRoutes } from "./youtube/routes.js";
 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -133,6 +133,7 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.json());
+
 app.use(express.static(webRoot));
 
 const server = http.createServer(app);
@@ -211,7 +212,7 @@ app.post("/api/local-ai/cancel", (_req, res) => {
   cancelLocalAISetup();
   res.json(localAIResponse());
 });
-registerSocialRoutes(app);
+registerYouTubeChannelRoutes(app);
 
 app.get("/api/health", (_req, res) => {
   const health = evaluatePollHealth(AA_POLL);
@@ -675,8 +676,14 @@ async function pollVideos(): Promise<void> {
     const companyVideos = companiesResult.status === "fulfilled" ? companiesResult.value : [];
     if (creatorsResult.status === "rejected" && companiesResult.status === "rejected") return;
 
-    const newCreatorVideos = upsertVideos(creatorVideos);
-    const newCompanyVideos = upsertVideos(companyVideos);
+    const activeVideoItems = (items: typeof creatorVideos, kind: "creator" | "company") => {
+      const active = getConfiguredYouTubeChannels(kind);
+      return items.filter((item) => active.some((channel) => item.channelHandle === channel.handle || item.channelHandle === channel.channelId));
+    };
+    // A channel may be removed while Promise.allSettled waits for the other
+    // kind. Recheck subscriptions immediately before touching SQLite.
+    const newCreatorVideos = upsertVideos(activeVideoItems(creatorVideos, "creator"));
+    const newCompanyVideos = upsertVideos(activeVideoItems(companyVideos, "company"));
     const videoStates = [getVideoFetchHealth("creator"), getVideoFetchHealth("company")].flat().filter(Boolean);
     if (videoStates.some((health) => health && health.succeeded > 0)) {
       setMeta("videos_last_poll", new Date().toISOString());
@@ -811,7 +818,6 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   console.log(`[Server] ${signal} received — shutting down`);
   for (const t of timers) clearInterval(t);
   stopTheme();
-  stopSocialPolling();
   stopPublicBenchmarkPolling();
   cancelLocalAISetup();
   await stopLocalAI();
@@ -840,7 +846,6 @@ server.on("error", (err) => {
 server.listen(PORT, BIND_HOST, () => {
   console.log(`AI Pulse server v${APP_VERSION} running at http://${BIND_HOST}:${PORT}`);
   Promise.resolve(initializeLocalAI()).catch((err) => console.warn("[Local AI] Initialization:", err.message));
-  initializeSocialPolling();
   startPublicBenchmarkPolling(() => broadcast({ type: "public_benchmarks", payload: getPublicBenchmarks() }));
   bootstrap().catch((err) => console.error("Bootstrap failed:", err));
 });

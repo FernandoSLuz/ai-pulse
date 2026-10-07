@@ -1,10 +1,10 @@
 {
   "name": "@ai-pulse/widget",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "productName": "AI Pulse",
   "desktopName": "ai-pulse.desktop",
   "private": true,
-  "description": "AI Pulse desktop app \u2014 tray, server supervisor, settings, and the leaderboard widget.",
+  "description": "AI Pulse desktop app — tray, server supervisor, settings, and the leaderboard widget.",
   "homepage": "https://github.com/FernandoSLuz/ai-pulse",
   "author": {
     "name": "Fernando Silva da Luz",

@@ -39,13 +39,14 @@ Fonte única: `README.md` + `docs/ARCHITECTURE.md` + `docs/CONFIGURATION.md` +
   versão da suíte/data do resultado com a hora em que os dados foram baixados.
 - Curadoria e chat rodam no GGUF local por llama-server. O primeiro setup detecta RAM e baixa
   o perfil Light/Balanced com hash verificável e cancelamento; sem modelo pronto, usa regras.
-  O catálogo de modelos é a fonte dos URLs/hashes. `AA_API_KEY`, `TAVILY_API_KEY` e
-  `X_API_BEARER_TOKEN` são opcionais para dados/enriquecimento/busca/posts; nenhum é fallback de modelo.
+  O catálogo de modelos é a fonte dos URLs/hashes. `AA_API_KEY` e `TAVILY_API_KEY`
+  são opcionais para enriquecimento/busca; nenhum é fallback de modelo.
 - `GET /api/videos` sem `kind` = `kind=creator` — contrato do `widget.html` (`?limit=3`).
   Payload WS `{type:"videos"}`: `items` = creators, `companyItems` = empresas. Não renomear campos.
 - Toda URL de feed nova: verificar por GET (200 + parseia RSS/Atom + item ≤90 dias) antes de
   entrar no `sources.json`. `channelId` de YouTube: extrair de `youtube.com/@handle`
   (`"externalId":"UC…"`), nunca chutar.
+- YouTube: `Videos → Add channel` aceita username, `@username`, URL de canal ou channel ID; o usuário escolhe Creators/Companies, a seleção fica no SQLite e o RSS público deve ser validado com item nos últimos 90 dias. O mesmo channel identity não pode estar nos dois kinds no schema atual.
 - Migração de banco: padrão `migrateNewsColumns`/`migrateVideoColumns`
   (`PRAGMA table_info` + `ALTER TABLE ADD COLUMN` condicional). Nunca apagar/recriar o banco.
 - better-sqlite3 >= 13 (raiz, hoisted) é N-API: um único binário serve Node e Electron.

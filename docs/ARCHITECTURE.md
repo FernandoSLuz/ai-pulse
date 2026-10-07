@@ -1,6 +1,6 @@
 # Architecture
 
-AI Pulse is a local "AI model radar" for Windows, macOS, and Linux (Omarchy/Hyprland). It combines a news feed, benchmark rankings, a local AI-analyst briefing, local chat with optional web search, a "My Stack" upgrade advisor, social posts, and an always-on desktop leaderboard widget — all driven from a single desktop app.
+AI Pulse is a local "AI model radar" for Windows, macOS, and Linux (Omarchy/Hyprland). It combines a news feed, benchmark rankings, a local AI-analyst briefing, local chat with optional web search, a "My Stack" upgrade advisor, and an always-on desktop leaderboard widget — all driven from a single desktop app.
 
 This document explains how the pieces fit together: the three packages, the supervisor process model, and how data flows through a poll cycle.
 
@@ -184,6 +184,12 @@ Each `VideoItem` has `kind: "creator" | "company"` (absent = creator). `migrateV
 The WebSocket payload `{type:"videos"}` keeps `items` as creators and adds `companyItems` for the Companies panel. Do not rename those fields.
 
 Company channels live in `config/sources.json` as `companyChannels` (same shape as `youtubeChannels`). They are polled alongside creators; a company-fetch failure must not block creator persist/broadcast.
+
+The dashboard can add a YouTube channel by username, `@username`, public
+channel URL, or channel ID. The selected `creator`/`company` kind is persisted
+in SQLite after the public RSS feed is validated, including the requirement for
+an item from the last 90 days. The current schema permits one kind per channel
+identity, so the same channel cannot be assigned to both panels.
 
 ## Variant collapse (presentation only)
 
