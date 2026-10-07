@@ -35,7 +35,9 @@ Notes on the optional keys:
 ## Local AI setup
 
 AI curation and chat use the selected local GGUF through llama-server. Light is
-Qwen3.5 0.8B Q4 and Balanced is Qwen3 1.7B Q8_0. First setup detects RAM,
+Qwen3.5 0.8B Q4 (minimum 4 GiB RAM) and Balanced is Qwen3 1.7B Q8_0
+(minimum 8 GiB RAM). Automatic selection recommends Light below 16 GiB to
+leave room for the OS and other apps. First setup detects RAM,
 offers both profiles, downloads the model and pinned CPU runtime with progress
 and hash verification, and supports cancellation. If no model is ready,
 deterministic rules remain available; the app never switches to a cloud model.

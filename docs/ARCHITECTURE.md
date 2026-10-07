@@ -132,6 +132,12 @@ Curation **never silently degrades**. Every run records the local profile/runtim
 
 ### Benchmark ingestion
 
+The dashboard defaults to all tested configurations (`testedModels` / `testedWinners`).
+The optional best-per-model view and compact widget use grouped `models` / `winners`.
+Grouping retains the winning row’s exact tested name; it never combines scores or prices
+from different settings. The AA Intelligence Index is a weighted external evaluation,
+not a consensus ranking. Every row links to its AA configuration page.
+
 Model rankings come from the **public Artificial Analysis leaderboard** (RSC payload, no key
 required): `fetchAaPublicSiteModels` joins the payload's metadata rows (name/creator) with its
 metric rows (intelligence/pricing/speed) by slug and drops models AA marks as deprecated. The

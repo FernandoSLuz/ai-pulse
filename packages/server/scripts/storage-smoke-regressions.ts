@@ -38,10 +38,13 @@ try {
     const fresh = db.upsertNews([{ ...item, id: "new-hash", link: "https://example.com/launch?utm_medium=new" }]);
     assert.equal(fresh.length, 0, "upgrade canonicalization must not notify the same article again");
     assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM news").get().n, 1);
+    db.upsertNews([{ ...item, id: "older", link: "https://example.com/older", title: "OpenAI launches GPT-5", publishedAt: new Date(Date.now() - 2 * 86400000).toISOString() }]);
+    assert.equal(db.getNews(10, "all", "today").length, 1, "today excludes older stories");
+    assert.equal(db.getNews(10, "all", "week").length, 2, "week includes the older story");
     for (const [id, published, title] of [["future", new Date(Date.now() + 86400000).toISOString(), "OpenAI announces GPT-8"], ["bad-date", "invalid", "OpenAI announces GPT-9"], ["unrelated", new Date().toISOString(), "Database API maintenance"]]) {
       db.upsertNews([{ ...item, id, link: `https://example.com/${id}`, title, summary: "", publishedAt: published }]);
     }
-    assert.equal(db.getNews().length, 1, "future, invalid and unrelated cached stories stay out");
+    assert.equal(db.getNews().length, 2, "future, invalid and unrelated cached stories stay out");
     db.clearAiPicksForPeriod("today");
     sql.prepare("UPDATE models SET price_blended=0, price_input=0, price_output=0, price_source_url=?").run("https://artificialanalysis.ai/models");
     db.upsertSocialProfiles([{ handle: "sama", name: "Sam Altman", profileUrl: "https://x.com/sama", enabled: true, source: "user" }]);

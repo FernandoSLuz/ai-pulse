@@ -54,10 +54,6 @@ function isPickList(value: unknown): boolean {
   return Array.isArray(value) && value.every((item) => typeof item === "string" || (item && typeof item === "object" && typeof (item as { id?: unknown }).id === "string"));
 }
 
-function hasBriefingShape(data: Record<string, unknown>): boolean {
-  return typeof data.yourStack === "string" || typeof data.headlineNewsId === "string" || Array.isArray(data.breakingNewsIds);
-}
-
 function periodPickList(value: unknown): unknown {
   if (Array.isArray(value)) return value;
   if (value && typeof value === "object") return (value as { picks?: unknown }).picks;
@@ -99,7 +95,6 @@ export async function generateBriefing(
   };
 
   const llm = await routeLlmJson(buildAnalystPrompt(promptContext), env);
-  recordOutcome(llm && hasBriefingShape(llm.data) ? llm : null);
   const rules = buildRulesBriefing(promptContext);
   const data: Record<string, unknown> = llm?.data && typeof llm.data === "object"
     ? (llm.data as Record<string, unknown>)
@@ -110,6 +105,8 @@ export async function generateBriefing(
     ? data.breakingNewsIds.filter((id): id is string => typeof id === "string").map((id) => newsById.get(id)).filter((n): n is NewsItem => Boolean(n)).slice(0, 3)
     : [];
 
+  const accepted = llm && (selectedHeadline || selectedBreaking.length > 0) ? llm : null;
+  recordOutcome(accepted);
   return saveBriefing({
     headline: selectedHeadline ? `${selectedHeadline.title} (${selectedHeadline.source})` : rules.headline,
     breaking: selectedBreaking.length ? selectedBreaking.map((n) => `${n.title} (${n.source})`) : rules.breaking,
@@ -118,7 +115,7 @@ export async function generateBriefing(
     yourStack: rules.yourStack,
     upgradeSuggestion: rules.upgradeSuggestion,
     upgradeSlug: rules.upgradeSlug,
-    analystSource: llm?.provider ?? "rules",
+    analystSource: accepted?.provider ?? "rules",
     createdAt: new Date().toISOString(),
   });
 }
@@ -203,9 +200,10 @@ export async function curateAiPicksAllPeriods(
   }
 
   const llm = await routeLlmJson(buildBatchedAiPickPrompt(candidateMap), env);
-  const isBatchShape = Boolean(llm?.data && typeof llm.data.periods === "object" && Object.values(llm.data.periods as Record<string, unknown>).every((value) => isPickList(periodPickList(value))));
+  const root = llm?.data?.periods;
+  const picksRoot = root && typeof root === "object" && !Array.isArray(root) ? root as Record<string, unknown> : {};
+  const isBatchShape = periods.every((period) => !candidateMap[period].length || isPickList(periodPickList(picksRoot[period])));
   recordOutcome(llm && isBatchShape ? llm : null);
-  const picksRoot = (llm?.data?.periods as Record<string, unknown>) ?? {};
 
   for (const period of periods) {
     const candidates = getNews(20, "all", period, "all");

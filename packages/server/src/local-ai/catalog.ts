@@ -57,5 +57,6 @@ export function runtimeSpec(platform: NodeJS.Platform, arch: string): LocalAiRun
 }
 
 export function chooseProfile(ramBytes: number): LocalAiProfile {
-  return ramBytes >= LOCAL_AI_MODELS.balanced.minRamBytes ? "balanced" : "light";
+  // Leave headroom for the OS and other applications on 8 GB machines.
+  return ramBytes >= 16 * 1024 ** 3 ? "balanced" : "light";
 }

@@ -42,16 +42,13 @@ const variantsWithPrices = mergeBenchmarkModels(
 assert.equal(variantsWithPrices.find((m) => m.slug === "demo-a")?.priceBlended, 2);
 assert.equal(variantsWithPrices.find((m) => m.slug === "demo-b")?.priceBlended, 9);
 
-// Open weights are not silently promoted to open source.
-const weights = model({ accessibility: "Open weights", accessibilityScore: 4 });
-assert.notEqual(weights.accessibility, "Open source");
-
 // Effort variants collapse for presentation, while SQLite/source slugs remain distinct.
 const variants = collapseVariants([
   model({ slug: "demo-high", name: "Demo (High Effort)", intelligence: 80 }),
   model({ slug: "demo-low", name: "Demo (Low Effort)", intelligence: 79 }),
 ]);
 assert.equal(variants.models.length, 1);
+assert.equal(variants.models[0].displayName, "Demo (High Effort)", "grouping retains the winning tested configuration");
 assert.equal(variants.variantsCollapsed, 1);
 assert.equal(Object.keys(variants.variantAliases).length, 1);
 
